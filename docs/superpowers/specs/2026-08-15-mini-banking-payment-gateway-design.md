@@ -284,37 +284,50 @@ Lý do chọn .NET 8:
 
 ### Project Structure
 
+V1 uses a small folder-based modular monolith. The first implementation should not create one `.csproj` per module. That structure is valid for a stricter modular monolith, but it is too heavy for the current portfolio scope.
+
 Solution đề xuất:
 
 ```text
-src/
-  MiniBanking.Api/
-  MiniBanking.Modules.Accounts/
-  MiniBanking.Modules.Ledger/
-  MiniBanking.Modules.Payments/
-  MiniBanking.Modules.Merchants/
-  MiniBanking.Modules.Webhooks/
-  MiniBanking.Modules.Audit/
-  MiniBanking.SharedKernel/
-  MiniBanking.Infrastructure/
-
-tests/
-  MiniBanking.UnitTests/
-  MiniBanking.IntegrationTests/
-  MiniBanking.ConcurrencyTests/
+be/
+  MiniBanking.sln
+  src/
+    MiniBanking.Api/
+      Modules/
+        Accounts/
+          Domain/
+          Application/
+          Infrastructure/
+          Endpoints/
+        Ledger/
+        Payments/
+        Merchants/
+        Webhooks/
+        Audit/
+      SharedKernel/
+      Infrastructure/
+  tests/
+    MiniBanking.Tests/
 ```
 
-Vai trò từng project:
+Vai trò từng vùng code:
 
-- `MiniBanking.Api`: HTTP endpoints, authentication middleware, request pipeline, OpenAPI.
-- `MiniBanking.Modules.Accounts`: customer, wallet account, balance query.
-- `MiniBanking.Modules.Ledger`: ledger transaction, ledger entries, balance invariant.
-- `MiniBanking.Modules.Payments`: payment, refund, settlement orchestration.
-- `MiniBanking.Modules.Merchants`: merchant credentials, HMAC verification, API access rules.
-- `MiniBanking.Modules.Webhooks`: webhook subscription, delivery, retry attempts.
-- `MiniBanking.Modules.Audit`: audit events, security events, operational history.
-- `MiniBanking.SharedKernel`: shared domain primitives such as `Money`, `Entity`, `DomainEvent`, `Result`.
-- `MiniBanking.Infrastructure`: EF Core, PostgreSQL, Redis, RabbitMQ, background workers, Serilog, OpenTelemetry.
+- `MiniBanking.Api`: ASP.NET Core app, HTTP endpoints, authentication middleware, request pipeline, OpenAPI.
+- `Modules/Accounts`: customer, wallet account, balance query.
+- `Modules/Ledger`: ledger transaction, ledger entries, balance invariant.
+- `Modules/Payments`: payment, refund, settlement orchestration.
+- `Modules/Merchants`: merchant credentials, HMAC verification, API access rules.
+- `Modules/Webhooks`: webhook subscription, delivery, retry attempts.
+- `Modules/Audit`: audit events, security events, operational history.
+- `SharedKernel`: shared domain primitives such as `Money`, `Entity`, `DomainEvent`, `Result`.
+- `Infrastructure`: EF Core, PostgreSQL, Redis, RabbitMQ, background workers, Serilog, OpenTelemetry.
+- `MiniBanking.Tests`: unit, integration and concurrency tests. It can be split later only if the test suite becomes too large.
+
+Extraction rule:
+
+- Keep one deployable and one API project in v1.
+- Split a module into its own `.csproj` only when there is real pressure: build time, ownership boundary, dependency isolation, or extraction toward a service.
+- Do not use project count as an architecture signal. Use testable invariants and clean module boundaries instead.
 
 ### Application Pattern
 

@@ -1,0 +1,33 @@
+# Build outputs
+bin/
+obj/
+out/
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+
+# User/local IDE state
+.idea/
+.vscode/
+*.user
+*.suo
+*.rsuser
+.DS_Store
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.*.Local.json
+
+# Logs
+logs/
+*.log
+
+# Generated packages/artifacts
+*.nupkg
+*.snupkg
+

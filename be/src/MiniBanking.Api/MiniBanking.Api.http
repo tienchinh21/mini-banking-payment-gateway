@@ -1,0 +1,7 @@
+@MiniBanking.Api_HostAddress = http://localhost:5135
+
+### Swagger UI (Development only)
+GET {{MiniBanking.Api_HostAddress}}/swagger/index.html
+Accept: text/html
+
+###

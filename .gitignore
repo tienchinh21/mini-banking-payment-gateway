@@ -11,6 +11,7 @@ coverage/
 # User/local IDE state
 .idea/
 .vscode/
+.codegraph/
 *.user
 *.suo
 *.rsuser

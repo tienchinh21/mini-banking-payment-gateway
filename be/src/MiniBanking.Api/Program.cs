@@ -37,12 +37,26 @@ app.UseHttpsRedirection();
 
 app.Run();
 
-static void LoadEnvFile(string path = ".env")
+static void LoadEnvFile(string fileName = ".env")
 {
-    if (!File.Exists(path))
-        return;
+    var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
 
-    foreach (var line in File.ReadAllLines(path))
+    while (directory != null)
+    {
+        var filePath = Path.Combine(directory.FullName, fileName);
+        if (File.Exists(filePath))
+        {
+            LoadEnvFileFromPath(filePath);
+            return;
+        }
+
+        directory = directory.Parent;
+    }
+}
+
+static void LoadEnvFileFromPath(string filePath)
+{
+    foreach (var line in File.ReadAllLines(filePath))
     {
         var trimmed = line.Trim();
         if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#'))

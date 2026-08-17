@@ -26,6 +26,7 @@ try
     // Add services to the container.
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
+    builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 
     // Entity Framework Core
     var connectionString = builder.Configuration.GetConnectionString("PostgreSql");
@@ -65,6 +66,14 @@ try
 
     app.UseHttpsRedirection();
 
+    // Seed demo data in development
+    if (app.Environment.IsDevelopment())
+    {
+        using var scope = app.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<MiniBankingDbContext>();
+        await DataSeeder.SeedAsync(dbContext);
+    }
+
     // Health endpoint
     app.MapHealthChecks("/health", new HealthCheckOptions
     {
@@ -98,6 +107,72 @@ try
             Framework = ".NET 8",
             Environment = app.Environment.EnvironmentName
         });
+    });
+
+    // Demo wallet endpoints
+    app.MapGet("/api/v1/admin/wallets/{accountNumber}/balance", async (string accountNumber, MiniBankingDbContext db) =>
+    {
+        var wallet = await db.WalletAccounts
+            .AsNoTracking()
+            .Include(w => w.Customer)
+            .FirstOrDefaultAsync(w => w.AccountNumber == accountNumber);
+
+        if (wallet is null)
+            return Results.NotFound(ApiResponse.Fail("Không tìm thấy tài khoản ví"));
+
+        var balance = await db.BalanceSnapshots
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.WalletAccountId == wallet.Id);
+
+        return Results.Ok(ApiResponse.Ok("Thông tin số dư", new
+        {
+            wallet.Id,
+            wallet.AccountNumber,
+            wallet.Currency,
+            CustomerName = wallet.Customer.FullName,
+            AvailableBalance = balance?.Available.Amount ?? 0,
+            LedgerBalance = balance?.Ledger.Amount ?? 0
+        }));
+    });
+
+    app.MapGet("/api/v1/admin/wallets/{accountNumber}/ledger", async (string accountNumber, MiniBankingDbContext db) =>
+    {
+        var wallet = await db.WalletAccounts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(w => w.AccountNumber == accountNumber);
+
+        if (wallet is null)
+            return Results.NotFound(ApiResponse.Fail("Không tìm thấy tài khoản ví"));
+
+        var entries = await db.LedgerEntries
+            .AsNoTracking()
+            .Where(e => e.AccountId == wallet.Id)
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => new
+            {
+                e.Id,
+                e.LedgerTransactionId,
+                e.AccountType,
+                e.Amount,
+                e.Currency,
+                e.IsDebit,
+                e.CreatedAt
+            })
+            .ToListAsync();
+
+        return Results.Ok(ApiResponse.Ok("Lịch sử sổ cái", entries));
+    });
+
+    app.MapGet("/api/v1/demo/seed-status", async (MiniBankingDbContext db) =>
+    {
+        return Results.Ok(ApiResponse.Ok("Trạng thái seed", new
+        {
+            Customers = await db.BankingCustomers.CountAsync(),
+            Wallets = await db.WalletAccounts.CountAsync(),
+            BalanceSnapshots = await db.BalanceSnapshots.CountAsync(),
+            LedgerTransactions = await db.LedgerTransactions.CountAsync(),
+            LedgerEntries = await db.LedgerEntries.CountAsync()
+        }));
     });
 
     app.Run();

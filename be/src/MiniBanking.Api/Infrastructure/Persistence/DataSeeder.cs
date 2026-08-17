@@ -1,0 +1,31 @@
+using Microsoft.EntityFrameworkCore;
+using MiniBanking.Modules.Accounts.Domain;
+using MiniBanking.Modules.Ledger.Domain;
+using MiniBanking.SharedKernel;
+
+namespace MiniBanking.Infrastructure.Persistence;
+
+public static class DataSeeder
+{
+    public static async Task SeedAsync(MiniBankingDbContext context)
+    {
+        if (await context.BankingCustomers.AnyAsync())
+            return;
+
+        var customer = new BankingCustomer("Demo Customer", "demo@minibanking.local", "0900000000");
+        var wallet = new WalletAccount(customer, "WALLET_DEMO_001", "VND");
+        var balance = new BalanceSnapshot(wallet, Money.Vnd(500_000));
+
+        var topUpTransaction = new LedgerTransaction("TOPUP-001", LedgerTransactionType.TopUp, "Initial demo top-up");
+        topUpTransaction.AddEntry(SystemAccountIds.PlatformClearing, "PlatformClearing", Money.Vnd(500_000), isDebit: true);
+        topUpTransaction.AddEntry(wallet.Id, "WalletAccount", Money.Vnd(500_000), isDebit: false);
+        topUpTransaction.ValidateInvariant();
+
+        context.BankingCustomers.Add(customer);
+        context.WalletAccounts.Add(wallet);
+        context.BalanceSnapshots.Add(balance);
+        context.LedgerTransactions.Add(topUpTransaction);
+
+        await context.SaveChangesAsync();
+    }
+}

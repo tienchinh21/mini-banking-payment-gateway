@@ -1,7 +1,9 @@
+using MediatR;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Infrastructure.Security;
+using MiniBanking.Modules.Payments.Application;
 using MiniBanking.SharedKernel;
 using Serilog;
 
@@ -57,6 +59,7 @@ try
     // Configure the HTTP request pipeline.
     app.UseSerilogRequestLogging();
     app.UseMiddleware<CorrelationIdMiddleware>();
+    app.UseMiddleware<HmacVerificationMiddleware>();
 
     if (app.Environment.IsDevelopment())
     {
@@ -173,6 +176,41 @@ try
             LedgerTransactions = await db.LedgerTransactions.CountAsync(),
             LedgerEntries = await db.LedgerEntries.CountAsync()
         }));
+    });
+
+    // Merchant payment endpoint
+    app.MapPost("/api/v1/merchant/payments", async (CreatePaymentRequest request, HttpContext context, IMediator mediator) =>
+    {
+        var merchantId = context.Items["MerchantId"] as string;
+        var idempotencyKey = context.Items["IdempotencyKey"] as string;
+
+        if (string.IsNullOrWhiteSpace(merchantId) || string.IsNullOrWhiteSpace(idempotencyKey))
+            return Results.Unauthorized();
+
+        context.Request.EnableBuffering();
+        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        context.Request.Body.Position = 0;
+
+        var command = new CreatePaymentCommand(
+            merchantId,
+            idempotencyKey,
+            context.Request.Method,
+            context.Request.Path.Value ?? "/api/v1/merchant/payments",
+            body,
+            request);
+
+        try
+        {
+            var response = await mediator.Send(command);
+            return response.Status == "Succeeded"
+                ? Results.Ok(ApiResponse.Ok("Thanh toán thành công", response))
+                : Results.Ok(ApiResponse.Ok("Thanh toán thất bại", response));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(ApiResponse.Fail(ex.Message));
+        }
     });
 
     app.Run();

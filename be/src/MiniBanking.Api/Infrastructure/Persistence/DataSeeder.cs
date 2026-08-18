@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MiniBanking.Modules.Accounts.Domain;
 using MiniBanking.Modules.Ledger.Domain;
+using MiniBanking.Modules.Merchants.Domain;
 using MiniBanking.SharedKernel;
 
 namespace MiniBanking.Infrastructure.Persistence;
@@ -9,8 +10,17 @@ public static class DataSeeder
 {
     public static async Task SeedAsync(MiniBankingDbContext context)
     {
+        if (!await context.Merchants.AnyAsync())
+        {
+            var merchant = new Merchant("ecommerce-demo", "Demo E-commerce", "merchant-api-key", "merchant-secret-key");
+            context.Merchants.Add(merchant);
+        }
+
         if (await context.BankingCustomers.AnyAsync())
+        {
+            await context.SaveChangesAsync();
             return;
+        }
 
         var customer = new BankingCustomer("Demo Customer", "demo@minibanking.local", "0900000000");
         var wallet = new WalletAccount(customer, "WALLET_DEMO_001", "VND");

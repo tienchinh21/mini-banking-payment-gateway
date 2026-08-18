@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using MiniBanking.Modules.Accounts.Domain;
 using MiniBanking.Modules.Ledger.Domain;
+using MiniBanking.Modules.Merchants.Domain;
+using MiniBanking.Modules.Payments.Domain;
 using MiniBanking.SharedKernel;
 
 namespace MiniBanking.Infrastructure.Persistence;
@@ -17,6 +19,9 @@ public class MiniBankingDbContext : DbContext
     public DbSet<BalanceSnapshot> BalanceSnapshots => Set<BalanceSnapshot>();
     public DbSet<LedgerTransaction> LedgerTransactions => Set<LedgerTransaction>();
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
+    public DbSet<Merchant> Merchants => Set<Merchant>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -108,6 +113,63 @@ public class MiniBankingDbContext : DbContext
             entity.Property(e => e.UpdatedBy).HasMaxLength(100);
             entity.HasIndex(e => new { e.LedgerTransactionId, e.Sequence });
             entity.HasIndex(e => e.AccountId);
+        });
+
+        modelBuilder.Entity<Merchant>(entity =>
+        {
+            entity.ToTable("merchants");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MerchantId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.ApiKey).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Secret).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.WebhookUrl).HasMaxLength(500);
+            entity.Property(e => e.IsActive).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+            entity.HasIndex(e => e.MerchantId).IsUnique();
+            entity.HasIndex(e => e.ApiKey).IsUnique();
+        });
+
+        modelBuilder.Entity<Payment>(entity =>
+        {
+            entity.ToTable("payments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MerchantId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.MerchantOrderId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Amount).IsRequired();
+            entity.Property(e => e.Currency).HasMaxLength(3).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.CallbackUrl).HasMaxLength(500);
+            entity.Property(e => e.Status).IsRequired();
+            entity.Property(e => e.FailureCode).HasMaxLength(100);
+            entity.Property(e => e.IdempotencyKey).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+            entity.HasIndex(e => new { e.MerchantId, e.IdempotencyKey }).IsUnique();
+            entity.HasIndex(e => e.MerchantOrderId);
+        });
+
+        modelBuilder.Entity<IdempotencyRecord>(entity =>
+        {
+            entity.ToTable("idempotency_records");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MerchantId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Key).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.RequestMethod).HasMaxLength(10).IsRequired();
+            entity.Property(e => e.RequestPath).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.RequestBodyHash).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ResponsePayload);
+            entity.Property(e => e.Status).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+            entity.HasIndex(e => new { e.MerchantId, e.Key }).IsUnique();
         });
     }
 }

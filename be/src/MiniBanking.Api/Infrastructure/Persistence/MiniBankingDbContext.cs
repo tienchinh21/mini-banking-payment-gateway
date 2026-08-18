@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MiniBanking.Modules.Accounts.Domain;
+using MiniBanking.Modules.Admin.Domain;
 using MiniBanking.Modules.Ledger.Domain;
 using MiniBanking.Modules.Merchants.Domain;
 using MiniBanking.Modules.Payments.Domain;
@@ -14,6 +15,8 @@ public class MiniBankingDbContext : DbContext
     {
     }
 
+    public DbSet<AdminUser> AdminUsers => Set<AdminUser>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<BankingCustomer> BankingCustomers => Set<BankingCustomer>();
     public DbSet<WalletAccount> WalletAccounts => Set<WalletAccount>();
     public DbSet<BalanceSnapshot> BalanceSnapshots => Set<BalanceSnapshot>();
@@ -32,6 +35,42 @@ public class MiniBankingDbContext : DbContext
 
         modelBuilder.HasDefaultSchema("public");
         modelBuilder.Ignore<DomainEvent>();
+
+        modelBuilder.Entity<AdminUser>(entity =>
+        {
+            entity.ToTable("admin_users");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Email).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.FullName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.PasswordHash).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Role).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.IsActive).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+            entity.HasIndex(e => e.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<AuditLog>(entity =>
+        {
+            entity.ToTable("audit_logs");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ActorId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ActorEmail).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Action).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Resource).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Method).HasMaxLength(10).IsRequired();
+            entity.Property(e => e.Path).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.RequestBody);
+            entity.Property(e => e.ResponseStatusCode).IsRequired();
+            entity.Property(e => e.IpAddress).HasMaxLength(50);
+            entity.Property(e => e.CorrelationId).HasMaxLength(100);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasIndex(e => e.ActorId);
+            entity.HasIndex(e => e.Resource);
+        });
 
         modelBuilder.Entity<BankingCustomer>(entity =>
         {

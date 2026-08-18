@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Accounts.Domain;
+using MiniBanking.Modules.Admin.Domain;
 using MiniBanking.Modules.Ledger.Domain;
 using MiniBanking.Modules.Merchants.Domain;
 using MiniBanking.SharedKernel;
@@ -27,6 +29,16 @@ public static class DataSeeder
             // Keep the demo merchant webhook URL pointed at the local receiver.
             existingMerchant.SetWebhookUrl(demoWebhookUrl);
             context.Merchants.Update(existingMerchant);
+        }
+
+        if (!await context.AdminUsers.AnyAsync())
+        {
+            var admin = new AdminUser(
+                "admin@minibanking.local",
+                "System Administrator",
+                PasswordHasher.Hash("Admin@123"),
+                "Admin");
+            context.AdminUsers.Add(admin);
         }
 
         if (await context.BankingCustomers.AnyAsync())

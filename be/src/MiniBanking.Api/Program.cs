@@ -1,12 +1,18 @@
 using MediatR;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using MiniBanking.Infrastructure.Messaging;
 using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Infrastructure.Security;
+using MiniBanking.Modules.Admin.Application;
 using MiniBanking.Modules.Payments.Application;
 using MiniBanking.SharedKernel;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
+using System.Security.Claims;
 
 // Load .env file for local development (ignored by git).
 // In production, environment variables are provided by the host.
@@ -30,6 +36,64 @@ try
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
     builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
+
+    // JWT authentication
+    var jwtSecret = builder.Configuration["JWT_SECRET"] ?? "this-is-a-demo-secret-key-change-in-production";
+    var jwtOptions = new JwtOptions
+    {
+        Secret = jwtSecret,
+        Issuer = builder.Configuration["JWT_ISSUER"] ?? "MiniBanking",
+        Audience = builder.Configuration["JWT_AUDIENCE"] ?? "MiniBanking",
+        ExpirationHours = int.Parse(builder.Configuration["JWT_EXPIRATION_HOURS"] ?? "8")
+    };
+    builder.Services.AddSingleton(jwtOptions);
+    builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+
+    builder.Services
+        .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = jwtOptions.Issuer,
+                ValidAudience = jwtOptions.Audience,
+                IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                    System.Text.Encoding.UTF8.GetBytes(jwtOptions.Secret)),
+                RoleClaimType = ClaimTypes.Role
+            };
+        });
+
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
+        options.AddPolicy("MerchantOrAdmin", policy => policy.RequireRole("Merchant", "Admin"));
+    });
+
+    // OpenTelemetry
+    var serviceName = builder.Configuration["OTEL_SERVICE_NAME"] ?? "MiniBanking.Api";
+    var serviceVersion = "1.0.0";
+
+    builder.Services.AddOpenTelemetry()
+        .WithTracing(tracing =>
+        {
+            tracing
+                .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName, serviceVersion: serviceVersion))
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddConsoleExporter();
+        })
+        .WithMetrics(metrics =>
+        {
+            metrics
+                .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName, serviceVersion: serviceVersion))
+                .AddAspNetCoreInstrumentation()
+                .AddRuntimeInstrumentation()
+                .AddConsoleExporter();
+        });
 
     // Entity Framework Core
     var connectionString = builder.Configuration.GetConnectionString("PostgreSql");
@@ -84,6 +148,9 @@ try
     }
 
     app.UseHttpsRedirection();
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.UseMiddleware<AuditLogMiddleware>();
 
     // Seed demo data in development
     if (app.Environment.IsDevelopment())
@@ -128,7 +195,7 @@ try
         });
     });
 
-    // Demo wallet endpoints
+    // Admin wallet endpoints
     app.MapGet("/api/v1/admin/wallets/{accountNumber}/balance", async (string accountNumber, MiniBankingDbContext db) =>
     {
         var wallet = await db.WalletAccounts
@@ -152,7 +219,7 @@ try
             AvailableBalance = balance?.Available.Amount ?? 0,
             LedgerBalance = balance?.Ledger.Amount ?? 0
         }));
-    });
+    }).RequireAuthorization("Admin");
 
     app.MapGet("/api/v1/admin/wallets/{accountNumber}/ledger", async (string accountNumber, MiniBankingDbContext db) =>
     {
@@ -180,7 +247,7 @@ try
             .ToListAsync();
 
         return Results.Ok(ApiResponse.Ok("Lịch sử sổ cái", entries));
-    });
+    }).RequireAuthorization("Admin");
 
     app.MapGet("/api/v1/demo/seed-status", async (MiniBankingDbContext db) =>
     {
@@ -266,6 +333,24 @@ try
         }
     });
 
+    // Auth endpoint
+    app.MapPost("/api/v1/auth/login", async (LoginRequest request, IJwtTokenService tokenService, MiniBankingDbContext db) =>
+    {
+        var admin = await db.AdminUsers
+            .FirstOrDefaultAsync(a => a.Email == request.Email && a.IsActive);
+
+        if (admin is null || !PasswordHasher.Verify(request.Password, admin.PasswordHash))
+            return Results.Unauthorized();
+
+        var token = tokenService.GenerateToken(
+            admin.Id.ToString(),
+            admin.Email,
+            admin.FullName,
+            new[] { admin.Role });
+
+        return Results.Ok(ApiResponse.Ok("Đăng nhập thành công", new { Token = token }));
+    });
+
     // Admin settlement endpoint
     app.MapPost("/api/v1/admin/settlements", async (CreateSettlementRequest request, IMediator mediator) =>
     {
@@ -278,7 +363,30 @@ try
         {
             return Results.BadRequest(ApiResponse.Fail(ex.Message));
         }
-    });
+    }).RequireAuthorization("Admin");
+
+    // Admin audit log endpoint
+    app.MapGet("/api/v1/admin/audit-logs", async (MiniBankingDbContext db) =>
+    {
+        var logs = await db.AuditLogs
+            .AsNoTracking()
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(20)
+            .Select(a => new
+            {
+                a.Id,
+                a.ActorEmail,
+                a.Action,
+                a.Resource,
+                a.Method,
+                a.Path,
+                a.ResponseStatusCode,
+                a.CreatedAt
+            })
+            .ToListAsync();
+
+        return Results.Ok(ApiResponse.Ok("Lịch sử audit", logs));
+    }).RequireAuthorization("Admin");
 
     // Demo webhook receiver for local testing
     app.MapPost("/api/v1/demo/webhook-receiver", async (HttpContext context) =>

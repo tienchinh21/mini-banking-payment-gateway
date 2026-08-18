@@ -188,6 +188,7 @@ try
             return Results.Unauthorized();
 
         context.Request.EnableBuffering();
+        context.Request.Body.Position = 0;
         using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
         var body = await reader.ReadToEndAsync();
         context.Request.Body.Position = 0;
@@ -213,7 +214,62 @@ try
         }
     });
 
+    // Merchant refund endpoint
+    app.MapPost("/api/v1/merchant/refunds", async (CreateRefundRequest request, HttpContext context, IMediator mediator) =>
+    {
+        var merchantId = context.Items["MerchantId"] as string;
+        var idempotencyKey = context.Items["IdempotencyKey"] as string;
+
+        if (string.IsNullOrWhiteSpace(merchantId) || string.IsNullOrWhiteSpace(idempotencyKey))
+            return Results.Unauthorized();
+
+        context.Request.EnableBuffering();
+        context.Request.Body.Position = 0;
+        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        context.Request.Body.Position = 0;
+
+        var command = new CreateRefundCommand(
+            merchantId,
+            idempotencyKey,
+            context.Request.Method,
+            context.Request.Path.Value ?? "/api/v1/merchant/refunds",
+            body,
+            request);
+
+        try
+        {
+            var response = await mediator.Send(command);
+            return response.Status == "Succeeded"
+                ? Results.Ok(ApiResponse.Ok("Hoàn tiền thành công", response))
+                : Results.Ok(ApiResponse.Ok("Hoàn tiền thất bại", response));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(ApiResponse.Fail(ex.Message));
+        }
+    });
+
+    // Admin settlement endpoint
+    app.MapPost("/api/v1/admin/settlements", async (CreateSettlementRequest request, IMediator mediator) =>
+    {
+        try
+        {
+            var response = await mediator.Send(new CreateSettlementCommand(request));
+            return Results.Ok(ApiResponse.Ok("Quyết toán thành công", response));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(ApiResponse.Fail(ex.Message));
+        }
+    });
+
     app.Run();
+}
+catch (Microsoft.Extensions.Hosting.HostAbortedException)
+{
+    // Expected during EF Core design-time tooling; rethrow without fatal logging.
+    throw;
 }
 catch (Exception ex)
 {

@@ -173,5 +173,43 @@ public class MiniBankingDbContext : DbContext
             entity.Property(e => e.UpdatedBy).HasMaxLength(100);
             entity.HasIndex(e => new { e.MerchantId, e.Key }).IsUnique();
         });
+
+        modelBuilder.Entity<Refund>(entity =>
+        {
+            entity.ToTable("refunds");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MerchantId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.MerchantRefundId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Amount).IsRequired();
+            entity.Property(e => e.Currency).HasMaxLength(3).IsRequired();
+            entity.Property(e => e.Reason).HasMaxLength(500);
+            entity.Property(e => e.Status).IsRequired();
+            entity.Property(e => e.FailureCode).HasMaxLength(100);
+            entity.Property(e => e.IdempotencyKey).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+            entity.HasIndex(e => new { e.MerchantId, e.IdempotencyKey }).IsUnique();
+            entity.HasIndex(e => new { e.MerchantId, e.MerchantRefundId }).IsUnique();
+            entity.HasIndex(e => e.PaymentId);
+        });
+
+        modelBuilder.Entity<Settlement>(entity =>
+        {
+            entity.ToTable("settlements");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MerchantId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.BatchReference).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Amount).IsRequired();
+            entity.Property(e => e.Currency).HasMaxLength(3).IsRequired();
+            entity.Property(e => e.PaymentCount).IsRequired();
+            entity.Property(e => e.Status).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+            entity.HasIndex(e => new { e.MerchantId, e.BatchReference }).IsUnique();
+        });
     }
 }

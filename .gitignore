@@ -7,6 +7,10 @@ coverage/
 *.trx
 *.coverage
 *.coveragexml
+node_modules/
+dist/
+dist-ssr/
+
 
 # User/local IDE state
 .idea/

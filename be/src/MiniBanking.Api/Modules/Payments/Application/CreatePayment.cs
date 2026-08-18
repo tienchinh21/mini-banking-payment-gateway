@@ -177,6 +177,21 @@ public class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, Paymen
 
             idempotencyRecord.Complete(JsonSerializer.Serialize(response));
 
+            var outboxMessage = new OutboxMessage(
+                "PaymentSucceeded",
+                JsonSerializer.Serialize(new
+                {
+                    PaymentId = succeededPayment.Id,
+                    MerchantId = succeededPayment.MerchantId,
+                    MerchantOrderId = succeededPayment.MerchantOrderId,
+                    Amount = succeededPayment.Amount,
+                    Currency = succeededPayment.Currency,
+                    WalletAccountId = succeededPayment.WalletAccountId,
+                    Timestamp = DateTime.UtcNow
+                }));
+
+            _context.OutboxMessages.Add(outboxMessage);
+
             await _context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 

@@ -146,9 +146,6 @@ public sealed class CreateRefundCommandHandler : IRequestHandler<CreateRefundCom
 
             refund.MarkSucceeded(ledgerTransaction.Id);
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
             var response = new CreateRefundResponse(
                 refund.Id,
                 refund.MerchantRefundId,
@@ -158,7 +155,25 @@ public sealed class CreateRefundCommandHandler : IRequestHandler<CreateRefundCom
                 refund.Currency,
                 null);
 
+            var outboxMessage = new OutboxMessage(
+                "RefundSucceeded",
+                JsonSerializer.Serialize(new
+                {
+                    RefundId = refund.Id,
+                    PaymentId = refund.PaymentId,
+                    MerchantId = refund.MerchantId,
+                    MerchantRefundId = refund.MerchantRefundId,
+                    Amount = refund.Amount,
+                    Currency = refund.Currency,
+                    Timestamp = DateTime.UtcNow
+                }));
+
+            _dbContext.OutboxMessages.Add(outboxMessage);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
             await RecordIdempotencyAsync(command, bodyHash, response, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
             return response;
         }
         catch (Exception)

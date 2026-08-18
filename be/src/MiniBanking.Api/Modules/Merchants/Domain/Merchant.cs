@@ -33,4 +33,9 @@ public class Merchant : Entity
         Secret = secret;
         WebhookUrl = webhookUrl;
     }
+
+    public void SetWebhookUrl(string? webhookUrl)
+    {
+        WebhookUrl = webhookUrl;
+    }
 }

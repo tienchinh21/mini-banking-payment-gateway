@@ -4,6 +4,7 @@ using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Modules.Ledger.Domain;
 using MiniBanking.Modules.Payments.Domain;
 using MiniBanking.SharedKernel;
+using System.Text.Json;
 
 namespace MiniBanking.Modules.Payments.Application;
 
@@ -104,6 +105,21 @@ public sealed class CreateSettlementCommandHandler : IRequestHandler<CreateSettl
             _dbContext.LedgerTransactions.Add(ledgerTransaction);
 
             settlement.MarkCompleted(ledgerTransaction.Id);
+
+            var outboxMessage = new OutboxMessage(
+                "SettlementCompleted",
+                JsonSerializer.Serialize(new
+                {
+                    SettlementId = settlement.Id,
+                    MerchantId = settlement.MerchantId,
+                    BatchReference = settlement.BatchReference,
+                    Amount = settlement.Amount,
+                    Currency = settlement.Currency,
+                    PaymentCount = settlement.PaymentCount,
+                    Timestamp = DateTime.UtcNow
+                }));
+
+            _dbContext.OutboxMessages.Add(outboxMessage);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

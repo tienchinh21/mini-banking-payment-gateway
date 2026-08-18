@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using MiniBanking.Infrastructure.Messaging;
 using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Payments.Application;
@@ -53,6 +54,21 @@ try
         .AddNpgSql(connectionString!, name: "postgresql")
         .AddRedis($"localhost:{builder.Configuration["REDIS_PORT"] ?? "6379"}", name: "redis")
         .AddRabbitMQ(rabbitConnectionString, name: "rabbitmq");
+
+    // Messaging
+    var rabbitMqOptions = new RabbitMqOptions
+    {
+        HostName = builder.Configuration["RABBITMQ_HOSTNAME"] ?? "localhost",
+        Port = int.Parse(builder.Configuration["RABBITMQ_PORT"] ?? "5672"),
+        UserName = rabbitUser,
+        Password = rabbitPassword
+    };
+
+    builder.Services.AddSingleton(rabbitMqOptions);
+    builder.Services.AddSingleton<IRabbitMqConnection, RabbitMqConnection>();
+    builder.Services.AddHttpClient();
+    builder.Services.AddHostedService<OutboxPublisher>();
+    builder.Services.AddHostedService<WebhookConsumer>();
 
     var app = builder.Build();
 
@@ -262,6 +278,15 @@ try
         {
             return Results.BadRequest(ApiResponse.Fail(ex.Message));
         }
+    });
+
+    // Demo webhook receiver for local testing
+    app.MapPost("/api/v1/demo/webhook-receiver", async (HttpContext context) =>
+    {
+        using var reader = new StreamReader(context.Request.Body);
+        var body = await reader.ReadToEndAsync();
+        Log.Information("Received webhook event: {Body}", body);
+        return Results.Ok();
     });
 
     app.Run();

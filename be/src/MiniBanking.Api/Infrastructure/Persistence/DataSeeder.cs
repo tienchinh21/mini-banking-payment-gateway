@@ -10,10 +10,23 @@ public static class DataSeeder
 {
     public static async Task SeedAsync(MiniBankingDbContext context)
     {
-        if (!await context.Merchants.AnyAsync())
+        var existingMerchant = await context.Merchants.FirstOrDefaultAsync(m => m.MerchantId == "ecommerce-demo");
+        var demoWebhookUrl = "http://localhost:5335/api/v1/demo/webhook-receiver";
+        if (existingMerchant is null)
         {
-            var merchant = new Merchant("ecommerce-demo", "Demo E-commerce", "merchant-api-key", "merchant-secret-key");
+            var merchant = new Merchant(
+                "ecommerce-demo",
+                "Demo E-commerce",
+                "merchant-api-key",
+                "merchant-secret-key",
+                demoWebhookUrl);
             context.Merchants.Add(merchant);
+        }
+        else if (existingMerchant.WebhookUrl != demoWebhookUrl)
+        {
+            // Keep the demo merchant webhook URL pointed at the local receiver.
+            existingMerchant.SetWebhookUrl(demoWebhookUrl);
+            context.Merchants.Update(existingMerchant);
         }
 
         if (await context.BankingCustomers.AnyAsync())

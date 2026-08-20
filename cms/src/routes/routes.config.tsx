@@ -1,7 +1,11 @@
 import { lazy } from 'react'
 import { Navigate, type RouteObject } from 'react-router-dom'
 import { MainLayout } from '@/components/layout/MainLayout'
+import { AuthGuard, GuestGuard } from './AuthGuard'
 
+const LoginPage = lazy(() =>
+  import('@/modules/auth/pages/LoginPage').then((m) => ({ default: m.LoginPage }))
+)
 const DashboardPage = lazy(() =>
   import('@/modules/dashboard/pages/DashboardPage').then((m) => ({ default: m.DashboardPage }))
 )
@@ -26,8 +30,20 @@ const SettingsPage = lazy(() =>
 
 export const routesConfig: RouteObject[] = [
   {
+    path: '/login',
+    element: (
+      <GuestGuard>
+        <LoginPage />
+      </GuestGuard>
+    ),
+  },
+  {
     path: '/',
-    element: <MainLayout />,
+    element: (
+      <AuthGuard>
+        <MainLayout />
+      </AuthGuard>
+    ),
     children: [
       {
         index: true,

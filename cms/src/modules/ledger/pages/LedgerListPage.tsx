@@ -1,7 +1,28 @@
-import React from 'react'
-import { Form, Input, Select, Typography, Col, Tag, Alert } from 'antd'
-import { CheckCircleOutlined } from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import React, { useState } from 'react'
+import {
+  Form,
+  Input,
+  Select,
+  Typography,
+  Col,
+  Tag,
+  Alert,
+  Tabs,
+  Button,
+  Card,
+  Row,
+  Statistic,
+  message,
+  Space,
+} from 'antd'
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  AuditOutlined,
+  TransactionOutlined,
+  SyncOutlined,
+} from '@ant-design/icons'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   PageContainer,
   AppTable,
@@ -12,122 +33,101 @@ import {
 } from '@/components/core'
 import { useTable } from '@/hooks/useTable'
 import { formatDate } from '@/utils/format'
+import { ledgerService } from '../services/ledgerService'
+import type { LedgerEntryItem, LedgerTransactionItem, LedgerReconcileResult } from '../types'
 
 const { Text } = Typography
 
-interface LedgerEntryItem {
-  id: string
-  transactionId: string
-  transactionType: string
-  accountId: string
-  accountName: string
-  accountType: 'USER_WALLET' | 'MERCHANT_SETTLEMENT' | 'PLATFORM_CLEARING' | 'PLATFORM_FEE'
-  entryType: 'DEBIT' | 'CREDIT'
-  amount: number
-  currency: string
-  createdAt: string
-}
-
-const mockLedgerEntries: LedgerEntryItem[] = [
-  {
-    id: 'ENT-001',
-    transactionId: 'TXN-9001',
-    transactionType: 'PAYMENT_DIRECT_DEBIT',
-    accountId: 'WA-8801928371',
-    accountName: 'Ví người dùng (Nguyễn Văn An)',
-    accountType: 'USER_WALLET',
-    entryType: 'DEBIT',
-    amount: 250000,
-    currency: 'VND',
-    createdAt: '2026-08-15T10:00:00Z',
-  },
-  {
-    id: 'ENT-002',
-    transactionId: 'TXN-9001',
-    transactionType: 'PAYMENT_DIRECT_DEBIT',
-    accountId: 'SYS-CLEARING-01',
-    accountName: 'Tài khoản Platform Clearing',
-    accountType: 'PLATFORM_CLEARING',
-    entryType: 'CREDIT',
-    amount: 250000,
-    currency: 'VND',
-    createdAt: '2026-08-15T10:00:00Z',
-  },
-  {
-    id: 'ENT-003',
-    transactionId: 'TXN-9002',
-    transactionType: 'TOP_UP',
-    accountId: 'SYS-CLEARING-01',
-    accountName: 'Tài khoản Platform Clearing',
-    accountType: 'PLATFORM_CLEARING',
-    entryType: 'DEBIT',
-    amount: 1000000,
-    currency: 'VND',
-    createdAt: '2026-08-15T10:30:00Z',
-  },
-  {
-    id: 'ENT-004',
-    transactionId: 'TXN-9002',
-    transactionType: 'TOP_UP',
-    accountId: 'WA-8801928372',
-    accountName: 'Ví người dùng (Trần Thị Bình)',
-    accountType: 'USER_WALLET',
-    entryType: 'CREDIT',
-    amount: 1000000,
-    currency: 'VND',
-    createdAt: '2026-08-15T10:30:00Z',
-  },
-]
-
 export const LedgerListPage: React.FC = () => {
-  const [filterForm] = Form.useForm()
+  const [activeTab, setActiveTab] = useState('entries')
+  const [entryFilterForm] = Form.useForm()
+  const [txnFilterForm] = Form.useForm()
 
+  // 1. Entries table hook
   const {
-    queryParams,
-    pagination,
-    setTotal,
-    setKeyword,
-    setFilters,
-    handleTableChange,
-    handleReset,
+    queryParams: entryParams,
+    pagination: entryPagination,
+    setTotal: setEntryTotal,
+    setKeyword: setEntryKeyword,
+    setFilters: setEntryFilters,
+    handleTableChange: handleEntryTableChange,
+    handleReset: handleEntryReset,
   } = useTable<LedgerEntryItem>({
     defaultPageSize: 10,
   })
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['ledger-entries', queryParams],
+  // Query Entries
+  const {
+    data: entriesData,
+    isLoading: entriesLoading,
+    refetch: refetchEntries,
+  } = useQuery({
+    queryKey: ['ledger-entries', entryParams],
     queryFn: async () => {
-      let list = [...mockLedgerEntries]
-      if (queryParams.keyword) {
-        const kw = String(queryParams.keyword).toLowerCase()
-        list = list.filter(
-          (e) =>
-            e.transactionId.toLowerCase().includes(kw) ||
-            e.accountId.toLowerCase().includes(kw) ||
-            e.accountName.toLowerCase().includes(kw)
-        )
-      }
-      if (queryParams.entryType) {
-        list = list.filter((e) => e.entryType === queryParams.entryType)
-      }
-      setTotal(list.length)
-      return { items: list, total: list.length }
+      const res = await ledgerService.getEntries(entryParams)
+      setEntryTotal(res.meta.totalItems)
+      return res
     },
   })
 
-  const columns: AppTableColumns<LedgerEntryItem> = [
+  // 2. Transactions table hook
+  const {
+    queryParams: txnParams,
+    pagination: txnPagination,
+    setTotal: setTxnTotal,
+    setKeyword: setTxnKeyword,
+    handleTableChange: handleTxnTableChange,
+    handleReset: handleTxnReset,
+  } = useTable<LedgerTransactionItem>({
+    defaultPageSize: 10,
+  })
+
+  // Query Transactions
+  const {
+    data: txnData,
+    isLoading: txnLoading,
+    refetch: refetchTxns,
+  } = useQuery({
+    queryKey: ['ledger-transactions', txnParams],
+    queryFn: async () => {
+      const res = await ledgerService.getTransactions(txnParams)
+      setTxnTotal(res.meta.totalItems)
+      return res
+    },
+  })
+
+  // 3. Reconcile Mutation & State
+  const [reconcileResult, setReconcileResult] = useState<LedgerReconcileResult | null>(null)
+
+  const reconcileMutation = useMutation({
+    mutationFn: () => ledgerService.reconcile(),
+    onSuccess: (result) => {
+      setReconcileResult(result)
+      if (result.isBalanced) {
+        message.success('Đối soát hoàn tất: Sổ cái cân bằng 100%!')
+      } else {
+        message.warning('Phát hiện chênh lệch giữa vế Nợ và Có!')
+      }
+    },
+    onError: (err: any) => {
+      message.error(err?.message || 'Lỗi khi thực hiện đối soát sổ cái')
+    },
+  })
+
+  // Columns for Entries
+  const entryColumns: AppTableColumns<LedgerEntryItem> = [
     {
-      title: 'Mã bút toán (Entry ID)',
+      title: 'Mã bút toán',
       dataIndex: 'id',
       key: 'id',
       width: 140,
       render: (id) => <Text code>{id}</Text>,
     },
     {
-      title: 'Mã giao dịch sổ cái (Txn ID)',
+      title: 'Mã giao dịch (Txn)',
       dataIndex: 'transactionId',
       key: 'transactionId',
-      width: 160,
+      width: 170,
       render: (txn) => <Text copyable strong>{txn}</Text>,
     },
     {
@@ -141,7 +141,7 @@ export const LedgerListPage: React.FC = () => {
       title: 'Tài khoản ghi nhận',
       dataIndex: 'accountId',
       key: 'accountId',
-      width: 220,
+      width: 240,
       render: (accId, record) => (
         <div>
           <Text strong>{record.accountName}</Text>
@@ -163,7 +163,7 @@ export const LedgerListPage: React.FC = () => {
     {
       title: 'Ghi Nợ (Debit)',
       key: 'debit',
-      width: 150,
+      width: 160,
       align: 'right',
       render: (_, record) =>
         record.entryType === 'DEBIT' ? (
@@ -175,7 +175,7 @@ export const LedgerListPage: React.FC = () => {
     {
       title: 'Ghi Có (Credit)',
       key: 'credit',
-      width: 150,
+      width: 160,
       align: 'right',
       render: (_, record) =>
         record.entryType === 'CREDIT' ? (
@@ -193,17 +193,73 @@ export const LedgerListPage: React.FC = () => {
     },
   ]
 
-  const handleSearchSubmit = (values: any) => {
-    setKeyword(values.keyword || '')
-    setFilters({
-      entryType: values.entryType,
-    })
-  }
+  // Columns for Transactions
+  const txnColumns: AppTableColumns<LedgerTransactionItem> = [
+    {
+      title: 'Mã tham chiếu (Reference ID)',
+      dataIndex: 'referenceId',
+      key: 'referenceId',
+      width: 200,
+      render: (ref) => <Text copyable strong>{ref}</Text>,
+    },
+    {
+      title: 'Loại giao dịch',
+      dataIndex: 'type',
+      key: 'type',
+      width: 160,
+      render: (type) => <StatusTag status={String(type)} />,
+    },
+    {
+      title: 'Mô tả nghiệp vụ',
+      dataIndex: 'description',
+      key: 'description',
+      width: 280,
+    },
+    {
+      title: 'Số bút toán liên kết',
+      key: 'entriesCount',
+      width: 160,
+      align: 'center',
+      render: (_, record) => (
+        <Tag color="blue">{record.entries?.length ?? 'N/A'} bút toán</Tag>
+      ),
+    },
+    {
+      title: 'Trạng thái',
+      dataIndex: 'status',
+      key: 'status',
+      width: 130,
+      align: 'center',
+      render: (status) => <StatusTag status={String(status)} />,
+    },
+    {
+      title: 'Thời gian ghi nhận',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 170,
+      render: (date) => formatDate(date),
+    },
+  ]
 
   return (
     <PageContainer
       title="Sổ cái kép (Double-Entry Ledger)"
       subTitle="Nhật ký bút toán kế toán bất biến đảm bảo nguyên lý Tổng Nợ (Debit) = Tổng Có (Credit)"
+      extra={
+        <Space>
+          <Button
+            type="primary"
+            icon={<SyncOutlined spin={reconcileMutation.isPending} />}
+            loading={reconcileMutation.isPending}
+            onClick={() => {
+              setActiveTab('reconcile')
+              reconcileMutation.mutate()
+            }}
+          >
+            Chạy đối soát (Reconcile)
+          </Button>
+        </Space>
+      }
     >
       <Alert
         message="Bất biến kế toán: sum(Debit) == sum(Credit)"
@@ -214,42 +270,239 @@ export const LedgerListPage: React.FC = () => {
         style={{ marginBottom: 16 }}
       />
 
-      <AppFilter
-        form={filterForm}
-        onSearch={handleSearchSubmit}
-        onReset={() => {
-          filterForm.resetFields()
-          handleReset()
-        }}
-      >
-        <Col xs={24} sm={12} md={8}>
-          <Form.Item name="keyword" label="Tìm kiếm" style={{ marginBottom: 0 }}>
-            <Input placeholder="Mã bút toán, mã GD, số tài khoản..." allowClear />
-          </Form.Item>
-        </Col>
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: 'entries',
+            label: (
+              <span>
+                <AuditOutlined /> Nhật ký Bút toán (Entries)
+              </span>
+            ),
+            children: (
+              <>
+                <AppFilter
+                  form={entryFilterForm}
+                  onSearch={(values) => {
+                    setEntryKeyword(values.keyword || '')
+                    setEntryFilters({
+                      entryType: values.entryType,
+                      accountType: values.accountType,
+                    })
+                  }}
+                  onReset={() => {
+                    entryFilterForm.resetFields()
+                    handleEntryReset()
+                  }}
+                >
+                  <Col xs={24} sm={12} md={8}>
+                    <Form.Item name="keyword" label="Tìm kiếm" style={{ marginBottom: 0 }}>
+                      <Input placeholder="Mã bút toán, mã GD, số tài khoản..." allowClear />
+                    </Form.Item>
+                  </Col>
 
-        <Col xs={24} sm={12} md={6}>
-          <Form.Item name="entryType" label="Vế ghi nhận" style={{ marginBottom: 0 }}>
-            <Select
-              placeholder="Tất cả (Debit / Credit)"
-              allowClear
-              options={[
-                { label: 'Ghi Nợ (Debit)', value: 'DEBIT' },
-                { label: 'Ghi Có (Credit)', value: 'CREDIT' },
-              ]}
-            />
-          </Form.Item>
-        </Col>
-      </AppFilter>
+                  <Col xs={24} sm={12} md={6}>
+                    <Form.Item name="entryType" label="Vế ghi nhận" style={{ marginBottom: 0 }}>
+                      <Select
+                        placeholder="Tất cả (Debit / Credit)"
+                        allowClear
+                        options={[
+                          { label: 'Ghi Nợ (Debit)', value: 'DEBIT' },
+                          { label: 'Ghi Có (Credit)', value: 'CREDIT' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
 
-      <AppTable<LedgerEntryItem>
-        rowKey="id"
-        columns={columns}
-        dataSource={data?.items || []}
-        loading={isLoading}
-        pagination={pagination}
-        onChange={handleTableChange}
-        onRefresh={() => refetch()}
+                  <Col xs={24} sm={12} md={6}>
+                    <Form.Item name="accountType" label="Loại tài khoản" style={{ marginBottom: 0 }}>
+                      <Select
+                        placeholder="Tất cả loại TK"
+                        allowClear
+                        options={[
+                          { label: 'Ví người dùng (WalletAccount)', value: 'WalletAccount' },
+                          { label: 'Platform Clearing', value: 'PlatformClearing' },
+                          { label: 'Merchant Settlement', value: 'MerchantSettlement' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                </AppFilter>
+
+                <AppTable<LedgerEntryItem>
+                  rowKey="id"
+                  columns={entryColumns}
+                  dataSource={entriesData?.items || []}
+                  loading={entriesLoading}
+                  pagination={entryPagination}
+                  onChange={handleEntryTableChange}
+                  onRefresh={() => refetchEntries()}
+                />
+              </>
+            ),
+          },
+          {
+            key: 'transactions',
+            label: (
+              <span>
+                <TransactionOutlined /> Giao dịch Sổ cái (Transactions)
+              </span>
+            ),
+            children: (
+              <>
+                <AppFilter
+                  form={txnFilterForm}
+                  onSearch={(values) => {
+                    setTxnKeyword(values.keyword || '')
+                  }}
+                  onReset={() => {
+                    txnFilterForm.resetFields()
+                    handleTxnReset()
+                  }}
+                >
+                  <Col xs={24} sm={12} md={8}>
+                    <Form.Item name="keyword" label="Tìm kiếm" style={{ marginBottom: 0 }}>
+                      <Input placeholder="Mã tham chiếu, nội dung..." allowClear />
+                    </Form.Item>
+                  </Col>
+                </AppFilter>
+
+                <AppTable<LedgerTransactionItem>
+                  rowKey="id"
+                  columns={txnColumns}
+                  dataSource={txnData?.items || []}
+                  loading={txnLoading}
+                  pagination={txnPagination}
+                  onChange={handleTxnTableChange}
+                  onRefresh={() => refetchTxns()}
+                />
+              </>
+            ),
+          },
+          {
+            key: 'reconcile',
+            label: (
+              <span>
+                <SyncOutlined /> Đối soát Sổ cái (Reconcile)
+              </span>
+            ),
+            children: (
+              <div>
+                <Card
+                  title="Kết quả kiểm toán đối soát cân bằng"
+                  bordered={false}
+                  extra={
+                    <Button
+                      type="primary"
+                      icon={<SyncOutlined spin={reconcileMutation.isPending} />}
+                      loading={reconcileMutation.isPending}
+                      onClick={() => reconcileMutation.mutate()}
+                    >
+                      Chạy lại đối soát
+                    </Button>
+                  }
+                  style={{ marginBottom: 24 }}
+                >
+                  {reconcileResult ? (
+                    <>
+                      <Alert
+                        message={
+                          reconcileResult.isBalanced
+                            ? 'Sổ cái cân bằng hoàn hảo (BALANCED)'
+                            : 'Phát hiện chênh lệch số dư (DISCREPANCY)'
+                        }
+                        description={`Thời điểm kiểm tra: ${formatDate(reconcileResult.checkedAt)}`}
+                        type={reconcileResult.isBalanced ? 'success' : 'error'}
+                        showIcon
+                        icon={
+                          reconcileResult.isBalanced ? (
+                            <CheckCircleOutlined />
+                          ) : (
+                            <CloseCircleOutlined />
+                          )
+                        }
+                        style={{ marginBottom: 24 }}
+                      />
+
+                      <Row gutter={[16, 16]}>
+                        <Col xs={24} sm={12} md={6}>
+                          <Card bordered>
+                            <Statistic
+                              title="Tổng vế Ghi Nợ (Debit)"
+                              value={reconcileResult.totalDebit}
+                              formatter={(val) => (
+                                <MoneyDisplay
+                                  amount={Number(val)}
+                                  currency="VND"
+                                  colorType="expense"
+                                  bold
+                                />
+                              )}
+                            />
+                          </Card>
+                        </Col>
+
+                        <Col xs={24} sm={12} md={6}>
+                          <Card bordered>
+                            <Statistic
+                              title="Tổng vế Ghi Có (Credit)"
+                              value={reconcileResult.totalCredit}
+                              formatter={(val) => (
+                                <MoneyDisplay
+                                  amount={Number(val)}
+                                  currency="VND"
+                                  colorType="income"
+                                  bold
+                                />
+                              )}
+                            />
+                          </Card>
+                        </Col>
+
+                        <Col xs={24} sm={12} md={6}>
+                          <Card bordered>
+                            <Statistic
+                              title="Số tài khoản đã quét"
+                              value={reconcileResult.totalAccountsChecked}
+                              suffix="tài khoản"
+                            />
+                          </Card>
+                        </Col>
+
+                        <Col xs={24} sm={12} md={6}>
+                          <Card bordered>
+                            <Statistic
+                              title="Tổng bút toán đã quét"
+                              value={reconcileResult.totalEntriesChecked}
+                              suffix="bút toán"
+                            />
+                          </Card>
+                        </Col>
+                      </Row>
+                    </>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                        Nhấn nút bên dưới để bắt đầu quét đối soát tính toàn vẹn và cân bằng tổng Debit = Credit trên toàn hệ thống.
+                      </Text>
+                      <Button
+                        type="primary"
+                        size="large"
+                        icon={<SyncOutlined spin={reconcileMutation.isPending} />}
+                        loading={reconcileMutation.isPending}
+                        onClick={() => reconcileMutation.mutate()}
+                      >
+                        Bắt đầu đối soát ngay
+                      </Button>
+                    </div>
+                  )}
+                </Card>
+              </div>
+            ),
+          },
+        ]}
       />
     </PageContainer>
   )

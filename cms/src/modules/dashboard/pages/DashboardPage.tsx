@@ -10,78 +10,19 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { PageContainer, AppTable, MoneyDisplay, StatusTag, ActionMenu, type AppTableColumns } from '@/components/core'
 import { formatDate } from '@/utils/format'
+import { dashboardService } from '../services/dashboardService'
+import type { RecentPaymentItem } from '../types'
 
 const { Text } = Typography
 
-interface RecentPayment {
-  id: string
-  orderId: string
-  merchantName: string
-  customerName: string
-  amount: number
-  currency: string
-  status: string
-  createdAt: string
-}
-
 export const DashboardPage: React.FC = () => {
-  // Fetch system statistics / seed status
+  // Fetch real system statistics
   const { data: statsData, refetch, isFetching } = useQuery({
     queryKey: ['dashboard-stats'],
-    queryFn: async () => {
-      // Mock / Real data
-      return {
-        totalBalance: 1250000000,
-        dailyPayments: 48500000,
-        successRate: 99.8,
-        activeMerchants: 12,
-        recentPayments: [
-          {
-            id: 'PAY-1001',
-            orderId: 'ORD-2026-0815-01',
-            merchantName: 'E-commerce Shop Alpha',
-            customerName: 'Nguyễn Văn A',
-            amount: 250000,
-            currency: 'VND',
-            status: 'SUCCEEDED',
-            createdAt: new Date().toISOString(),
-          },
-          {
-            id: 'PAY-1002',
-            orderId: 'ORD-2026-0815-02',
-            merchantName: 'Tech Store Beta',
-            customerName: 'Trần Thị B',
-            amount: 1500000,
-            currency: 'VND',
-            status: 'SUCCEEDED',
-            createdAt: new Date(Date.now() - 3600000).toISOString(),
-          },
-          {
-            id: 'PAY-1003',
-            orderId: 'ORD-2026-0815-03',
-            merchantName: 'Fashion Hub',
-            customerName: 'Lê Văn C',
-            amount: 780000,
-            currency: 'VND',
-            status: 'PENDING',
-            createdAt: new Date(Date.now() - 7200000).toISOString(),
-          },
-          {
-            id: 'PAY-1004',
-            orderId: 'ORD-2026-0815-04',
-            merchantName: 'Food & Beverage Corp',
-            customerName: 'Phạm Minh D',
-            amount: 120000,
-            currency: 'VND',
-            status: 'REFUNDED',
-            createdAt: new Date(Date.now() - 14400000).toISOString(),
-          },
-        ] as RecentPayment[],
-      }
-    },
+    queryFn: () => dashboardService.getStats(),
   })
 
-  const columns: AppTableColumns<RecentPayment> = [
+  const columns: AppTableColumns<RecentPaymentItem> = [
     {
       title: 'Mã GD (Payment ID)',
       dataIndex: 'id',
@@ -114,7 +55,7 @@ export const DashboardPage: React.FC = () => {
       width: 160,
       align: 'right',
       render: (val, record) => (
-        <MoneyDisplay amount={val} currency={record.currency} bold />
+        <MoneyDisplay amount={val} currency={record.currency || 'VND'} bold />
       ),
     },
     {
@@ -211,7 +152,7 @@ export const DashboardPage: React.FC = () => {
         title="Giao dịch thanh toán gần nhất"
         style={{ borderRadius: 8 }}
       >
-        <AppTable<RecentPayment>
+        <AppTable<RecentPaymentItem>
           rowKey="id"
           columns={columns}
           dataSource={statsData?.recentPayments || []}

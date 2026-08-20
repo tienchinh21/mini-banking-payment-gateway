@@ -66,7 +66,9 @@ apiClient.interceptors.response.use(
       errorMessage = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
       storage.remove(STORAGE_KEYS.ACCESS_TOKEN)
       storage.remove(STORAGE_KEYS.USER_INFO)
-      // Optional: redirect to login if auth is active
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
     } else if (status === 403) {
       errorMessage = 'Bạn không có quyền thực hiện thao tác này.'
     } else if (status === 404) {

@@ -4,8 +4,8 @@ export const API_ENDPOINTS = {
     HEALTH: '/health',
   },
   AUTH: {
-    LOGIN: '/admin/auth/login',
-    LOGOUT: '/admin/auth/logout',
+    LOGIN: '/auth/login',
+    LOGOUT: '/auth/logout',
     PROFILE: '/admin/auth/profile',
   },
   ACCOUNTS: {
@@ -20,6 +20,9 @@ export const API_ENDPOINTS = {
     LIST: '/admin/payments',
     DETAIL: (id: string) => `/admin/payments/${id}`,
     REFUND: (id: string) => `/admin/payments/${id}/refund`,
+    MERCHANT_PAY: '/merchant/payments',
+    MERCHANT_REFUND: '/merchant/refunds',
+    SETTLEMENT: '/admin/settlements',
   },
   LEDGER: {
     TRANSACTIONS: '/admin/ledger/transactions',
@@ -31,6 +34,9 @@ export const API_ENDPOINTS = {
     DETAIL: (id: string) => `/admin/merchants/${id}`,
     CREATE: '/admin/merchants',
     REGENERATE_KEYS: (id: string) => `/admin/merchants/${id}/regenerate-keys`,
+  },
+  DASHBOARD: {
+    STATS: '/admin/dashboard/stats',
   },
   AUDIT: {
     LOGS: '/admin/audit/logs',

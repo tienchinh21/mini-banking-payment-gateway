@@ -4,56 +4,10 @@ import { useQuery } from '@tanstack/react-query'
 import { PageContainer, AppTable, AppFilter, type AppTableColumns } from '@/components/core'
 import { useTable } from '@/hooks/useTable'
 import { formatDate } from '@/utils/format'
+import { auditService } from '../services/auditService'
+import type { AuditLogItem } from '../types'
 
 const { Text } = Typography
-
-interface AuditLogItem {
-  id: string
-  correlationId: string
-  action: string
-  actor: string
-  ipAddress: string
-  resource: string
-  status: 'SUCCESS' | 'FAILURE'
-  details: string
-  timestamp: string
-}
-
-const mockLogs: AuditLogItem[] = [
-  {
-    id: 'LOG-001',
-    correlationId: 'cms-1723719200-a1b2c3d',
-    action: 'MERCHANT_PAYMENT_INITIATED',
-    actor: 'MCH-ECOM-ALPHA',
-    ipAddress: '10.0.1.45',
-    resource: '/api/v1/merchant/payments',
-    status: 'SUCCESS',
-    details: 'Verified HMAC signature. Processed payment for order ORD-99881',
-    timestamp: '2026-08-15T10:00:00Z',
-  },
-  {
-    id: 'LOG-002',
-    correlationId: 'cms-1723719200-e5f6g7h',
-    action: 'WALLET_DEBIT_LOCK_ACQUIRED',
-    actor: 'PAYMENT_WORKER',
-    ipAddress: '127.0.0.1',
-    resource: 'WalletAccount:WA-8801928371',
-    status: 'SUCCESS',
-    details: 'Pessimistic row lock acquired on Account WA-8801928371',
-    timestamp: '2026-08-15T10:00:01Z',
-  },
-  {
-    id: 'LOG-003',
-    correlationId: 'cms-1723719200-i8j9k0l',
-    action: 'OUTBOX_EVENT_PUBLISHED',
-    actor: 'OUTBOX_DISPATCHER',
-    ipAddress: '127.0.0.1',
-    resource: 'RabbitMQ:payment.succeeded',
-    status: 'SUCCESS',
-    details: 'Event published to exchange mini_banking.events with routing key payment.succeeded',
-    timestamp: '2026-08-15T10:00:02Z',
-  },
-]
 
 export const AuditLogPage: React.FC = () => {
   const [filterForm] = Form.useForm()
@@ -65,23 +19,16 @@ export const AuditLogPage: React.FC = () => {
     setKeyword,
     handleTableChange,
     handleReset,
-  } = useTable<AuditLogItem>()
+  } = useTable<AuditLogItem>({
+    defaultPageSize: 10,
+  })
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['audit-logs', queryParams],
     queryFn: async () => {
-      let list = [...mockLogs]
-      if (queryParams.keyword) {
-        const kw = queryParams.keyword.toLowerCase()
-        list = list.filter(
-          (l) =>
-            l.action.toLowerCase().includes(kw) ||
-            l.correlationId.toLowerCase().includes(kw) ||
-            l.actor.toLowerCase().includes(kw)
-        )
-      }
-      setTotal(list.length)
-      return { items: list, total: list.length }
+      const res = await auditService.getAuditLogs(queryParams)
+      setTotal(res.meta.totalItems)
+      return res
     },
   })
 

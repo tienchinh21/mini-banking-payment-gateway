@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using MiniBanking.Infrastructure.Messaging;
 using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Infrastructure.Security;
+using MiniBanking.Modules.Admin;
 using MiniBanking.Modules.Admin.Application;
 using MiniBanking.Modules.Payments.Application;
 using MiniBanking.SharedKernel;
@@ -36,6 +37,17 @@ try
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
     builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
+
+    // CORS
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("AllowAll", policy =>
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        });
+    });
 
     // JWT authentication
     var jwtSecret = builder.Configuration["JWT_SECRET"] ?? "this-is-a-demo-secret-key-change-in-production";
@@ -148,6 +160,7 @@ try
     }
 
     app.UseHttpsRedirection();
+    app.UseCors("AllowAll");
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseMiddleware<AuditLogMiddleware>();
@@ -195,60 +208,7 @@ try
         });
     });
 
-    // Admin wallet endpoints
-    app.MapGet("/api/v1/admin/wallets/{accountNumber}/balance", async (string accountNumber, MiniBankingDbContext db) =>
-    {
-        var wallet = await db.WalletAccounts
-            .AsNoTracking()
-            .Include(w => w.Customer)
-            .FirstOrDefaultAsync(w => w.AccountNumber == accountNumber);
-
-        if (wallet is null)
-            return Results.NotFound(ApiResponse.Fail("Không tìm thấy tài khoản ví"));
-
-        var balance = await db.BalanceSnapshots
-            .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.WalletAccountId == wallet.Id);
-
-        return Results.Ok(ApiResponse.Ok("Thông tin số dư", new
-        {
-            wallet.Id,
-            wallet.AccountNumber,
-            wallet.Currency,
-            CustomerName = wallet.Customer.FullName,
-            AvailableBalance = balance?.Available.Amount ?? 0,
-            LedgerBalance = balance?.Ledger.Amount ?? 0
-        }));
-    }).RequireAuthorization("Admin");
-
-    app.MapGet("/api/v1/admin/wallets/{accountNumber}/ledger", async (string accountNumber, MiniBankingDbContext db) =>
-    {
-        var wallet = await db.WalletAccounts
-            .AsNoTracking()
-            .FirstOrDefaultAsync(w => w.AccountNumber == accountNumber);
-
-        if (wallet is null)
-            return Results.NotFound(ApiResponse.Fail("Không tìm thấy tài khoản ví"));
-
-        var entries = await db.LedgerEntries
-            .AsNoTracking()
-            .Where(e => e.AccountId == wallet.Id)
-            .OrderByDescending(e => e.CreatedAt)
-            .Select(e => new
-            {
-                e.Id,
-                e.LedgerTransactionId,
-                e.AccountType,
-                e.Amount,
-                e.Currency,
-                e.IsDebit,
-                e.CreatedAt
-            })
-            .ToListAsync();
-
-        return Results.Ok(ApiResponse.Ok("Lịch sử sổ cái", entries));
-    }).RequireAuthorization("Admin");
-
+    // Demo seed status endpoint
     app.MapGet("/api/v1/demo/seed-status", async (MiniBankingDbContext db) =>
     {
         return Results.Ok(ApiResponse.Ok("Trạng thái seed", new
@@ -259,6 +219,27 @@ try
             LedgerTransactions = await db.LedgerTransactions.CountAsync(),
             LedgerEntries = await db.LedgerEntries.CountAsync()
         }));
+    });
+
+    // Register Admin Module Endpoints (/api/v1/admin/*)
+    app.MapAdminEndpoints();
+
+    // Global Auth Login Endpoint (/api/v1/auth/login)
+    app.MapPost("/api/v1/auth/login", async (LoginRequest request, IJwtTokenService tokenService, MiniBankingDbContext db) =>
+    {
+        var admin = await db.AdminUsers
+            .FirstOrDefaultAsync(a => a.Email == request.Email && a.IsActive);
+
+        if (admin is null || !PasswordHasher.Verify(request.Password, admin.PasswordHash))
+            return Results.Unauthorized();
+
+        var token = tokenService.GenerateToken(
+            admin.Id.ToString(),
+            admin.Email,
+            admin.FullName,
+            new[] { admin.Role });
+
+        return Results.Ok(ApiResponse.Ok("Đăng nhập thành công", new { Token = token }));
     });
 
     // Merchant payment endpoint
@@ -332,61 +313,6 @@ try
             return Results.Conflict(ApiResponse.Fail(ex.Message));
         }
     });
-
-    // Auth endpoint
-    app.MapPost("/api/v1/auth/login", async (LoginRequest request, IJwtTokenService tokenService, MiniBankingDbContext db) =>
-    {
-        var admin = await db.AdminUsers
-            .FirstOrDefaultAsync(a => a.Email == request.Email && a.IsActive);
-
-        if (admin is null || !PasswordHasher.Verify(request.Password, admin.PasswordHash))
-            return Results.Unauthorized();
-
-        var token = tokenService.GenerateToken(
-            admin.Id.ToString(),
-            admin.Email,
-            admin.FullName,
-            new[] { admin.Role });
-
-        return Results.Ok(ApiResponse.Ok("Đăng nhập thành công", new { Token = token }));
-    });
-
-    // Admin settlement endpoint
-    app.MapPost("/api/v1/admin/settlements", async (CreateSettlementRequest request, IMediator mediator) =>
-    {
-        try
-        {
-            var response = await mediator.Send(new CreateSettlementCommand(request));
-            return Results.Ok(ApiResponse.Ok("Quyết toán thành công", response));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(ApiResponse.Fail(ex.Message));
-        }
-    }).RequireAuthorization("Admin");
-
-    // Admin audit log endpoint
-    app.MapGet("/api/v1/admin/audit-logs", async (MiniBankingDbContext db) =>
-    {
-        var logs = await db.AuditLogs
-            .AsNoTracking()
-            .OrderByDescending(a => a.CreatedAt)
-            .Take(20)
-            .Select(a => new
-            {
-                a.Id,
-                a.ActorEmail,
-                a.Action,
-                a.Resource,
-                a.Method,
-                a.Path,
-                a.ResponseStatusCode,
-                a.CreatedAt
-            })
-            .ToListAsync();
-
-        return Results.Ok(ApiResponse.Ok("Lịch sử audit", logs));
-    }).RequireAuthorization("Admin");
 
     // Demo webhook receiver for local testing
     app.MapPost("/api/v1/demo/webhook-receiver", async (HttpContext context) =>

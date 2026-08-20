@@ -13,5 +13,17 @@ export default defineConfig({
   server: {
     port: 5172,
     open: true,
+    proxy: {
+      '/api': {
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:5135',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/health': {
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:5135',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
 })

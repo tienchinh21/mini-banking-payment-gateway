@@ -41,34 +41,29 @@ Most backend portfolios stop at CRUD, authentication and simple order flows. Pay
 
 This project is designed around those failure modes.
 
-## Architecture
-
-The first version is a modular monolith, not microservices.
+## Repository Structure
 
 ```text
-be/
-  MiniBanking.sln
-  src/
-    MiniBanking.Api/
-      Modules/
-        Accounts/
-        Ledger/
-        Payments/
-        Merchants/
-        Webhooks/
-        Audit/
-      SharedKernel/
-      Infrastructure/
-  tests/
-    MiniBanking.Tests/
+mini-banking-payment-gateway/
+├── be/                          # .NET 8 Backend Modular Monolith
+│   ├── MiniBanking.sln
+│   ├── src/MiniBanking.Api/     # Core Banking API (Ledger, Accounts, Payments, Webhooks, HMAC)
+│   └── tests/MiniBanking.Tests/ # xUnit test suite
+├── cms/                         # React 19 + Vite + Ant Design 5 Admin CMS
+│   ├── src/modules/             # Accounts, Payments, Double-Entry Ledger, Merchants, Audit
+│   └── package.json
+├── docs/                        # Architecture specs & system design documentation
+└── docker-compose.yml           # PostgreSQL 16, Redis, RabbitMQ
 ```
 
-Reasons for this shape:
+## Admin Backoffice CMS (`cms/`)
 
-- One deployable keeps the project focused and easy to run.
-- Folder-based modules keep business boundaries visible.
-- Ledger and payment logic can be tested deeply without distributed-service noise.
-- Modules can be extracted later if real boundaries justify it.
+A modern, type-safe administrative portal built with **React 19 + TypeScript + Vite + Ant Design v5 + TanStack React Query + Axios**:
+- **Double-Entry Ledger Viewer:** Inspect balanced journal entries and debit/credit balances.
+- **Wallet & Account Management:** Customer wallets, balance queries, top-ups, and locking.
+- **Payment & Refund Operations:** Direct Debit transaction tracking and refund flows.
+- **Merchant API Management:** Partner credentials, HMAC secret rotation, and webhook logs.
+- **Audit & Trace Logs:** End-to-end trace correlation IDs for financial compliance.
 
 ## Target Tech Stack
 
@@ -209,11 +204,7 @@ The final demo should prove these flows end to end:
 
 ## Run Locally
 
-Prerequisites:
-
-- .NET 8 SDK
-
-Commands:
+### 1. Backend (.NET 8)
 
 ```bash
 cd be
@@ -221,6 +212,14 @@ dotnet restore
 dotnet build
 dotnet test
 dotnet run --project src/MiniBanking.Api
+```
+
+### 2. Admin CMS (React 19 + Ant Design 5)
+
+```bash
+cd cms
+npm install
+npm run dev
 ```
 
 Design document:

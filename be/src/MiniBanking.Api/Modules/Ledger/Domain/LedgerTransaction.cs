@@ -24,12 +24,32 @@ public class LedgerTransaction : Entity
         Description = description ?? string.Empty;
     }
 
+    /// <summary>
+    /// Adds a double-entry bookkeeping line to this transaction.
+    /// </summary>
+    /// <param name="accountId">The account receiving or giving the amount.</param>
+    /// <param name="accountType">Human-readable account type tag.</param>
+    /// <param name="amount">Monetary amount – must be positive.</param>
+    /// <param name="isDebit">True for debit (money out of account), false for credit.</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="amount"/> is zero or negative.</exception>
     public void AddEntry(Guid accountId, string accountType, Money amount, bool isDebit)
     {
+        if (!amount.IsPositive)
+            throw new ArgumentException("Ledger entry amount must be positive.", nameof(amount));
+
         var entry = new LedgerEntry(Id, accountId, accountType, amount, isDebit);
         _entries.Add(entry);
     }
 
+    /// <summary>
+    /// Validates the double-entry bookkeeping invariant:
+    /// sum of all debit amounts must equal sum of all credit amounts,
+    /// and all entries must share a single currency.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when there are no entries, when entries span multiple
+    /// currencies, or when debits and credits do not balance.
+    /// </exception>
     public void ValidateInvariant()
     {
         if (!_entries.Any())
@@ -37,12 +57,14 @@ public class LedgerTransaction : Entity
 
         var currencies = _entries.Select(e => e.Currency).Distinct().ToList();
         if (currencies.Count > 1)
-            throw new InvalidOperationException($"Ledger transaction entries must share the same currency. Found: {string.Join(", ", currencies)}.");
+            throw new InvalidOperationException(
+                $"Ledger transaction entries must share the same currency. Found: {string.Join(", ", currencies)}.");
 
-        var debitSum = _entries.Where(e => e.IsDebit).Sum(e => e.Amount);
+        var debitSum  = _entries.Where(e =>  e.IsDebit).Sum(e => e.Amount);
         var creditSum = _entries.Where(e => !e.IsDebit).Sum(e => e.Amount);
 
         if (debitSum != creditSum)
-            throw new InvalidOperationException($"Ledger transaction must be balanced. Debits={debitSum}, Credits={creditSum}.");
+            throw new InvalidOperationException(
+                $"Ledger transaction must be balanced. Debits={debitSum}, Credits={creditSum}.");
     }
 }

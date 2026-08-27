@@ -64,7 +64,9 @@ public class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, Paymen
     {
         var bodyHash = HmacSignatureService.ComputeBodyHash(command.RequestBody);
 
-        // Check existing idempotency record
+        // ── Idempotency check ────────────────────────────────────────────────────
+        // Read the existing record *before* opening the write transaction so we
+        // can return early without acquiring any row locks.
         var existingRecord = await _context.IdempotencyRecords
             .FirstOrDefaultAsync(
                 r => r.MerchantId == command.MerchantId && r.Key == command.IdempotencyKey,
@@ -72,52 +74,107 @@ public class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, Paymen
 
         if (existingRecord is not null)
         {
+            // Same key but different body → conflict; reject immediately.
             if (existingRecord.RequestBodyHash != bodyHash)
-                throw new InvalidOperationException("Idempotency key was used with a different request body.");
+                throw new InvalidOperationException(
+                    "Idempotency key was used with a different request body.");
 
+            // Already completed → replay the stored response without touching
+            // any balance or ledger data.
             if (existingRecord.Status == "Completed" && !string.IsNullOrEmpty(existingRecord.ResponsePayload))
                 return JsonSerializer.Deserialize<PaymentResponse>(existingRecord.ResponsePayload)!;
         }
 
-        var idempotencyRecord = existingRecord ?? new IdempotencyRecord(
-            command.MerchantId,
-            command.IdempotencyKey,
-            command.RequestMethod,
-            command.RequestPath,
-            bodyHash);
+        // ── Validate input early (before acquiring locks) ────────────────────────
+        if (!Guid.TryParse(command.Request.WalletAccountId, out var walletAccountId))
+        {
+            // We still need a DB round-trip to persist the idempotency record.
+            var failedResponse = new PaymentResponse(
+                Guid.Empty,
+                command.Request.MerchantOrderId,
+                "Failed",
+                command.Request.Amount,
+                command.Request.Currency,
+                "INVALID_WALLET_ACCOUNT_ID");
 
-        if (existingRecord is null)
-            _context.IdempotencyRecords.Add(idempotencyRecord);
+            await PersistIdempotencyRecord(existingRecord, command, bodyHash, failedResponse, cancellationToken);
+            return failedResponse;
+        }
 
+        // Validate the Money value object before touching the database.
+        Money amount;
+        try
+        {
+            amount = new Money(command.Request.Amount, command.Request.Currency);
+            if (!amount.IsPositive)
+                throw new ArgumentException("Amount must be positive.");
+        }
+        catch (Exception)
+        {
+            var failedResponse = new PaymentResponse(
+                Guid.Empty,
+                command.Request.MerchantOrderId,
+                "Failed",
+                command.Request.Amount,
+                command.Request.Currency,
+                "INVALID_AMOUNT");
+
+            await PersistIdempotencyRecord(existingRecord, command, bodyHash, failedResponse, cancellationToken);
+            return failedResponse;
+        }
+
+        // ── Serialisable transaction with row-level lock ──────────────────────────
+        // The SELECT … FOR UPDATE issued below ensures only one concurrent
+        // transaction holds the balance row lock at a time.  Any competing
+        // transaction will block at the SELECT until this one commits or rolls
+        // back, making the balance check + debit an atomic critical section at
+        // the database level.
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            if (!Guid.TryParse(command.Request.WalletAccountId, out var walletAccountId))
-            {
-                var failedResponse = new PaymentResponse(Guid.Empty, command.Request.MerchantOrderId, "Failed", command.Request.Amount, command.Request.Currency, "INVALID_WALLET_ACCOUNT_ID");
-                idempotencyRecord.Complete(JsonSerializer.Serialize(failedResponse));
-                await _context.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return failedResponse;
-            }
-
-            // Lock wallet balance snapshot row
+            // Lock the balance snapshot row for the duration of this transaction.
+            // No other concurrent payment can read or modify this row until we commit.
             var balance = await _context.BalanceSnapshots
-                .FromSqlInterpolated($"SELECT * FROM public.balance_snapshots WHERE \"WalletAccountId\" = {walletAccountId} FOR UPDATE")
+                .FromSqlInterpolated(
+                    $"SELECT * FROM public.balance_snapshots WHERE \"WalletAccountId\" = {walletAccountId} FOR UPDATE")
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (balance is null)
             {
-                var failedResponse = new PaymentResponse(Guid.Empty, command.Request.MerchantOrderId, "Failed", command.Request.Amount, command.Request.Currency, "WALLET_NOT_FOUND");
-                idempotencyRecord.Complete(JsonSerializer.Serialize(failedResponse));
-                await _context.SaveChangesAsync(cancellationToken);
+                var failedResponse = new PaymentResponse(
+                    Guid.Empty,
+                    command.Request.MerchantOrderId,
+                    "Failed",
+                    command.Request.Amount,
+                    command.Request.Currency,
+                    "WALLET_NOT_FOUND");
+
+                await CompleteIdempotencyAndSave(existingRecord, command, bodyHash, failedResponse, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return failedResponse;
             }
 
-            var amount = new Money(command.Request.Amount, command.Request.Currency);
+            // ── Check currency compatibility before calling Debit ─────────────────
+            if (balance.Currency != amount.Currency)
+            {
+                var failedResponse = new PaymentResponse(
+                    Guid.Empty,
+                    command.Request.MerchantOrderId,
+                    "Failed",
+                    command.Request.Amount,
+                    command.Request.Currency,
+                    "CURRENCY_MISMATCH");
 
+                await CompleteIdempotencyAndSave(existingRecord, command, bodyHash, failedResponse, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return failedResponse;
+            }
+
+            // ── Insufficient funds check (delegate to domain method) ──────────────
+            // Using balance.Debit() directly means the domain's guard is the single
+            // source of truth; a raw balance check here would be redundant and could
+            // diverge from the domain logic over time.
             if (balance.Available.Amount < amount.Amount)
             {
                 var payment = new Payment(
@@ -132,15 +189,20 @@ public class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, Paymen
                 payment.MarkFailed("INSUFFICIENT_FUNDS", "Wallet balance is not enough for this payment.");
                 _context.Payments.Add(payment);
 
-                var failedResponse = new PaymentResponse(payment.Id, command.Request.MerchantOrderId, "Failed", command.Request.Amount, command.Request.Currency, "INSUFFICIENT_FUNDS");
-                idempotencyRecord.Complete(JsonSerializer.Serialize(failedResponse));
+                var failedResponse = new PaymentResponse(
+                    payment.Id,
+                    command.Request.MerchantOrderId,
+                    "Failed",
+                    command.Request.Amount,
+                    command.Request.Currency,
+                    "INSUFFICIENT_FUNDS");
 
-                await _context.SaveChangesAsync(cancellationToken);
+                await CompleteIdempotencyAndSave(existingRecord, command, bodyHash, failedResponse, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return failedResponse;
             }
 
-            // Create ledger transaction
+            // ── Build and validate the double-entry ledger transaction ────────────
             var ledgerTransaction = new LedgerTransaction(
                 $"PAY-{Guid.NewGuid():N}",
                 LedgerTransactionType.Payment,
@@ -148,14 +210,18 @@ public class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, Paymen
 
             ledgerTransaction.AddEntry(walletAccountId, "WalletAccount", amount, isDebit: true);
             ledgerTransaction.AddEntry(SystemAccountIds.PlatformClearing, "PlatformClearing", amount, isDebit: false);
+
+            // Will throw if debits ≠ credits, preventing any unbalanced commit.
             ledgerTransaction.ValidateInvariant();
 
             _context.LedgerTransactions.Add(ledgerTransaction);
 
-            // Update balance
+            // ── Debit the wallet (domain guard prevents negative balance) ─────────
+            // At this point we hold the FOR UPDATE row lock so this debit is safe
+            // from concurrent interference at the DB level.
             balance.Debit(amount);
 
-            // Create payment record
+            // ── Create the payment record ─────────────────────────────────────────
             var succeededPayment = new Payment(
                 command.MerchantId,
                 command.Request.MerchantOrderId,
@@ -175,19 +241,20 @@ public class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, Paymen
                 succeededPayment.Amount,
                 succeededPayment.Currency);
 
-            idempotencyRecord.Complete(JsonSerializer.Serialize(response));
+            await CompleteIdempotencyAndSave(existingRecord, command, bodyHash, response, cancellationToken);
 
+            // ── Publish outbox event ──────────────────────────────────────────────
             var outboxMessage = new OutboxMessage(
                 "PaymentSucceeded",
                 JsonSerializer.Serialize(new
                 {
-                    PaymentId = succeededPayment.Id,
-                    MerchantId = succeededPayment.MerchantId,
+                    PaymentId      = succeededPayment.Id,
+                    MerchantId     = succeededPayment.MerchantId,
                     MerchantOrderId = succeededPayment.MerchantOrderId,
-                    Amount = succeededPayment.Amount,
-                    Currency = succeededPayment.Currency,
+                    Amount         = succeededPayment.Amount,
+                    Currency       = succeededPayment.Currency,
                     WalletAccountId = succeededPayment.WalletAccountId,
-                    Timestamp = DateTime.UtcNow
+                    Timestamp      = DateTime.UtcNow
                 }));
 
             _context.OutboxMessages.Add(outboxMessage);
@@ -202,5 +269,58 @@ public class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, Paymen
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Persists an idempotency record outside of the main payment transaction
+    /// (used for early-exit failure paths before the row lock is acquired).
+    /// </summary>
+    private async Task PersistIdempotencyRecord(
+        IdempotencyRecord? existingRecord,
+        CreatePaymentCommand command,
+        string bodyHash,
+        PaymentResponse response,
+        CancellationToken cancellationToken)
+    {
+        var record = existingRecord ?? new IdempotencyRecord(
+            command.MerchantId,
+            command.IdempotencyKey,
+            command.RequestMethod,
+            command.RequestPath,
+            bodyHash);
+
+        if (existingRecord is null)
+            _context.IdempotencyRecords.Add(record);
+
+        record.Complete(JsonSerializer.Serialize(response));
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Attaches / updates the idempotency record inside the active transaction.
+    /// Does NOT call SaveChangesAsync – the caller does so after adding other
+    /// entities to the same unit-of-work.
+    /// </summary>
+    private async Task CompleteIdempotencyAndSave(
+        IdempotencyRecord? existingRecord,
+        CreatePaymentCommand command,
+        string bodyHash,
+        PaymentResponse response,
+        CancellationToken cancellationToken)
+    {
+        var record = existingRecord ?? new IdempotencyRecord(
+            command.MerchantId,
+            command.IdempotencyKey,
+            command.RequestMethod,
+            command.RequestPath,
+            bodyHash);
+
+        if (existingRecord is null)
+            _context.IdempotencyRecords.Add(record);
+
+        record.Complete(JsonSerializer.Serialize(response));
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

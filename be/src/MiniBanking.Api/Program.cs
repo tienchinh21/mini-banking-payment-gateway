@@ -6,7 +6,6 @@ using MiniBanking.Infrastructure.Messaging;
 using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Admin;
-using MiniBanking.Modules.Admin.Application;
 using MiniBanking.Modules.Payments.Application;
 using MiniBanking.SharedKernel;
 using OpenTelemetry.Metrics;
@@ -149,6 +148,7 @@ try
     var app = builder.Build();
 
     // Configure the HTTP request pipeline.
+    app.UseCors("AllowAll");
     app.UseSerilogRequestLogging();
     app.UseMiddleware<CorrelationIdMiddleware>();
     app.UseMiddleware<HmacVerificationMiddleware>();
@@ -160,7 +160,6 @@ try
     }
 
     app.UseHttpsRedirection();
-    app.UseCors("AllowAll");
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseMiddleware<AuditLogMiddleware>();
@@ -174,7 +173,7 @@ try
     }
 
     // Health endpoint
-    app.MapHealthChecks("/health", new HealthCheckOptions
+    var healthOptions = new HealthCheckOptions
     {
         ResponseWriter = async (context, report) =>
         {
@@ -194,53 +193,24 @@ try
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsJsonAsync(response);
         }
-    });
+    };
+    app.MapHealthChecks("/health", healthOptions);
+    app.MapHealthChecks("/api/v1/health", healthOptions);
 
     // System info endpoint
     app.MapGet("/api/v1/system/info", () =>
     {
-        return ApiResponse.Ok("Thông tin hệ thống", new
+        return Results.Ok(ApiResponse.Ok("Thông tin hệ thống", new
         {
             Name = "Mini Banking API",
             Version = "1.0.0",
             Framework = ".NET 8",
             Environment = app.Environment.EnvironmentName
-        });
-    });
-
-    // Demo seed status endpoint
-    app.MapGet("/api/v1/demo/seed-status", async (MiniBankingDbContext db) =>
-    {
-        return Results.Ok(ApiResponse.Ok("Trạng thái seed", new
-        {
-            Customers = await db.BankingCustomers.CountAsync(),
-            Wallets = await db.WalletAccounts.CountAsync(),
-            BalanceSnapshots = await db.BalanceSnapshots.CountAsync(),
-            LedgerTransactions = await db.LedgerTransactions.CountAsync(),
-            LedgerEntries = await db.LedgerEntries.CountAsync()
         }));
     });
 
-    // Register Admin Module Endpoints (/api/v1/admin/*)
+    // Register all Admin API endpoints
     app.MapAdminEndpoints();
-
-    // Global Auth Login Endpoint (/api/v1/auth/login)
-    app.MapPost("/api/v1/auth/login", async (LoginRequest request, IJwtTokenService tokenService, MiniBankingDbContext db) =>
-    {
-        var admin = await db.AdminUsers
-            .FirstOrDefaultAsync(a => a.Email == request.Email && a.IsActive);
-
-        if (admin is null || !PasswordHasher.Verify(request.Password, admin.PasswordHash))
-            return Results.Unauthorized();
-
-        var token = tokenService.GenerateToken(
-            admin.Id.ToString(),
-            admin.Email,
-            admin.FullName,
-            new[] { admin.Role });
-
-        return Results.Ok(ApiResponse.Ok("Đăng nhập thành công", new { Token = token }));
-    });
 
     // Merchant payment endpoint
     app.MapPost("/api/v1/merchant/payments", async (CreatePaymentRequest request, HttpContext context, IMediator mediator) =>

@@ -13,6 +13,8 @@ dist-ssr/
 
 
 # User/local IDE state
+.pi/
+.agents/
 .idea/
 .vscode/
 .codegraph/

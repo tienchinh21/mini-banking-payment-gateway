@@ -7,11 +7,29 @@ export interface PaymentItem {
   payerName: string
   amount: number
   currency: string
-  status: 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED' | 'PARTIALLY_REFUNDED'
+  status: 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED' | 'PARTIALLY_REFUNDED' | string
+  description?: string
+  failureCode?: string | null
+  errorMessage?: string | null
   idempotencyKey: string
-  errorMessage?: string
+  ledgerTransactionId?: string | null
   createdAt: string
   updatedAt?: string
+}
+
+export interface PaymentLedgerEntry {
+  id: string
+  accountId: string
+  accountType: string
+  amount: number
+  currency: string
+  isDebit: boolean
+  createdAt: string
+}
+
+export interface PaymentDetail extends PaymentItem {
+  callbackUrl?: string | null
+  ledgerEntries?: PaymentLedgerEntry[]
 }
 
 export interface PaymentFilterParams {
@@ -28,4 +46,14 @@ export interface RefundFormData {
   paymentId: string
   amount: number
   reason: string
+}
+
+export interface RefundResult {
+  refundId: string
+  paymentId: string
+  amount: number
+  currency: string
+  reason?: string
+  status: string
+  createdAt: string
 }

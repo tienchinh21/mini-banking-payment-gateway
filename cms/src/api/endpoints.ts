@@ -1,11 +1,14 @@
 export const API_ENDPOINTS = {
+  DASHBOARD: {
+    STATS: '/admin/dashboard/stats',
+  },
   SYSTEM: {
     INFO: '/system/info',
     HEALTH: '/health',
   },
   AUTH: {
-    LOGIN: '/auth/login',
-    LOGOUT: '/auth/logout',
+    LOGIN: '/admin/auth/login',
+    LOGOUT: '/admin/auth/logout',
     PROFILE: '/admin/auth/profile',
   },
   ACCOUNTS: {
@@ -33,13 +36,12 @@ export const API_ENDPOINTS = {
     LIST: '/admin/merchants',
     DETAIL: (id: string) => `/admin/merchants/${id}`,
     CREATE: '/admin/merchants',
+    UPDATE: (id: string) => `/admin/merchants/${id}`,
+    DELETE: (id: string) => `/admin/merchants/${id}`,
     REGENERATE_KEYS: (id: string) => `/admin/merchants/${id}/regenerate-keys`,
   },
-  DASHBOARD: {
-    STATS: '/admin/dashboard/stats',
-  },
   AUDIT: {
-    LOGS: '/admin/audit/logs',
+    LOGS: '/admin/audit-logs',
   },
   DEMO: {
     SEED_STATUS: '/demo/seed-status',

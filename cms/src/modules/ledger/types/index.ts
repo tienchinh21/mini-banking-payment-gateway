@@ -1,3 +1,5 @@
+export type EntryType = 'DEBIT' | 'CREDIT' | string
+
 export interface LedgerEntryItem {
   id: string
   transactionId: string
@@ -5,7 +7,7 @@ export interface LedgerEntryItem {
   accountId: string
   accountName: string
   accountType: 'USER_WALLET' | 'MERCHANT_SETTLEMENT' | 'PLATFORM_CLEARING' | 'PLATFORM_FEE' | string
-  entryType: 'DEBIT' | 'CREDIT'
+  entryType: 'DEBIT' | 'CREDIT' | string
   amount: number
   currency: string
   createdAt: string
@@ -21,6 +23,15 @@ export interface LedgerTransactionItem {
   entries?: LedgerEntryItem[]
 }
 
+export interface TransactionLedgerSummary {
+  transactionId: string
+  isBalanced: boolean
+  totalDebit: number
+  totalCredit: number
+  currency: string
+  entries: LedgerEntryItem[]
+}
+
 export interface LedgerReconcileResult {
   status: 'BALANCED' | 'DISCREPANCY' | string
   isBalanced: boolean
@@ -34,7 +45,7 @@ export interface LedgerReconcileResult {
 export interface LedgerFilterParams {
   keyword?: string
   accountType?: string
-  entryType?: string
+  entryType?: EntryType
   page?: number
   pageSize?: number
 }

@@ -6,6 +6,7 @@ import type {
   LedgerTransactionItem,
   LedgerReconcileResult,
   LedgerFilterParams,
+  TransactionLedgerSummary,
 } from '../types'
 
 export const ledgerService = {
@@ -15,6 +16,28 @@ export const ledgerService = {
       params
     )
     return response.data
+  },
+
+  async getEntriesByTransactionId(transactionId: string): Promise<TransactionLedgerSummary> {
+    const response = await this.getEntries({ keyword: transactionId, pageSize: 50 })
+    const entries = response.items.filter(
+      (e) => e.transactionId.toLowerCase() === transactionId.toLowerCase()
+    )
+    const totalDebit = entries
+      .filter((e) => String(e.entryType).toUpperCase() === 'DEBIT')
+      .reduce((sum, e) => sum + e.amount, 0)
+    const totalCredit = entries
+      .filter((e) => String(e.entryType).toUpperCase() === 'CREDIT')
+      .reduce((sum, e) => sum + e.amount, 0)
+
+    return {
+      transactionId,
+      isBalanced: totalDebit === totalCredit && entries.length > 0,
+      totalDebit,
+      totalCredit,
+      currency: entries[0]?.currency || 'VND',
+      entries,
+    }
   },
 
   async getTransactions(params?: { keyword?: string; page?: number; pageSize?: number }): Promise<PaginatedResult<LedgerTransactionItem>> {

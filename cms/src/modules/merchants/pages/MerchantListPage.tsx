@@ -2,16 +2,24 @@ import React, { useState } from 'react'
 import {
   Form,
   Input,
+  Select,
   Button,
   Modal,
+  Switch,
+  Alert,
+  Space,
   message,
   Typography,
   Col,
-  Descriptions,
-  Tag,
-  Alert,
 } from 'antd'
-import { PlusOutlined, KeyOutlined, EyeOutlined, CheckCircleOutlined } from '@ant-design/icons'
+import {
+  PlusOutlined,
+  EditOutlined,
+  KeyOutlined,
+  DeleteOutlined,
+  CopyOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   PageContainer,
@@ -26,103 +34,188 @@ import { formatDate } from '@/utils/format'
 import { merchantService } from '../services/merchantService'
 import type {
   MerchantItem,
-  CreateMerchantFormData,
-  RegenerateKeyResult,
+  MerchantStatus,
+  CreateMerchantDto,
+  UpdateMerchantDto,
 } from '../types'
 
 const { Text, Paragraph } = Typography
 
+interface CredentialsModalData {
+  title: string
+  merchantName: string
+  merchantCode?: string
+  apiKey: string
+  secret: string
+}
+
 export const MerchantListPage: React.FC = () => {
   const queryClient = useQueryClient()
   const [filterForm] = Form.useForm()
+
+  // Modal states
   const [createModalVisible, setCreateModalVisible] = useState(false)
-  const [detailModalVisible, setDetailModalVisible] = useState(false)
-  const [selectedMerchant, setSelectedMerchant] = useState<MerchantItem | null>(null)
-  const [keyResultModalVisible, setKeyResultModalVisible] = useState(false)
-  const [generatedKeys, setGeneratedKeys] = useState<RegenerateKeyResult | null>(null)
-  const [createForm] = Form.useForm<CreateMerchantFormData>()
+  const [createForm] = Form.useForm<CreateMerchantDto>()
+
+  const [editModalVisible, setEditModalVisible] = useState(false)
+  const [editingMerchant, setEditingMerchant] = useState<MerchantItem | null>(null)
+  const [editForm] = Form.useForm<{ name: string; webhookUrl?: string; isActive: boolean }>()
+
+  const [credentialsData, setCredentialsData] = useState<CredentialsModalData | null>(null)
 
   const {
     queryParams,
     pagination,
     setTotal,
     setKeyword,
+    setFilters,
     handleTableChange,
     handleReset,
   } = useTable<MerchantItem>({
     defaultPageSize: 10,
   })
 
-  // 1. Query Merchants list
+  // ── 1. Fetch Merchants Query ──────────────────────────────────────────────
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['merchants-list', queryParams],
     queryFn: async () => {
-      const res = await merchantService.getMerchants(queryParams)
-      setTotal(res.meta.totalItems)
-      return res
+      const result = await merchantService.getMerchants(queryParams)
+      setTotal(result.meta.totalItems)
+      return result
     },
   })
 
-  // 2. Mutation Create Merchant
+  // ── 2. Create Merchant Mutation ───────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (values: CreateMerchantFormData) => merchantService.createMerchant(values),
-    onSuccess: (res: any) => {
-      message.success('Tạo đối tác Merchant thành công!')
+    mutationFn: (data: CreateMerchantDto) => merchantService.createMerchant(data),
+    onSuccess: (result) => {
+      message.success(`Đã thêm Merchant đối tác "${result.name}" thành công!`)
       setCreateModalVisible(false)
       createForm.resetFields()
       queryClient.invalidateQueries({ queryKey: ['merchants-list'] })
 
-      if (res?.data?.apiKey && res?.data?.secret) {
-        setGeneratedKeys({
-          id: res.data.id,
-          code: res.data.code,
-          apiKey: res.data.apiKey,
-          secret: res.data.secret,
-        })
-        setKeyResultModalVisible(true)
-      }
-    },
-    onError: (err: any) => {
-      message.error(err?.message || 'Không thể tạo Merchant')
+      // Display one-time generated credentials modal
+      setCredentialsData({
+        title: 'Đăng ký Merchant thành công',
+        merchantName: result.name,
+        merchantCode: result.code,
+        apiKey: result.apiKey,
+        secret: result.secret,
+      })
     },
   })
 
-  // 3. Mutation Regenerate API Keys
-  const regenKeysMutation = useMutation({
-    mutationFn: (id: string) => merchantService.regenerateKeys(id),
-    onSuccess: (res: any) => {
-      message.success('Cấp lại API Key & Secret thành công!')
+  // ── 3. Update Merchant Mutation ───────────────────────────────────────────
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateMerchantDto }) =>
+      merchantService.updateMerchant(id, data),
+    onSuccess: (result) => {
+      message.success(`Cập nhật thông tin Merchant "${result.name}" thành công!`)
+      setEditModalVisible(false)
+      setEditingMerchant(null)
+      editForm.resetFields()
+      queryClient.invalidateQueries({ queryKey: ['merchants-list'] })
+    },
+  })
+
+  // ── 4. Delete Merchant Mutation ────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => merchantService.deleteMerchant(id),
+    onSuccess: () => {
+      message.success('Xoá Merchant thành công!')
+      queryClient.invalidateQueries({ queryKey: ['merchants-list'] })
+    },
+  })
+
+  // ── 5. Regenerate Keys Mutation ────────────────────────────────────────────
+  const regenerateMutation = useMutation({
+    mutationFn: (merchant: MerchantItem) => merchantService.regenerateKeys(merchant.id),
+    onSuccess: (result, merchant) => {
+      message.success(`Đã cấp lại API Key & Secret mới cho đối tác "${merchant.name}"!`)
       queryClient.invalidateQueries({ queryKey: ['merchants-list'] })
 
-      const payload = res?.data || res
-      if (payload?.apiKey) {
-        setGeneratedKeys(payload)
-        setKeyResultModalVisible(true)
-      }
-    },
-    onError: (err: any) => {
-      message.error(err?.message || 'Không thể cấp lại API Key')
+      // Display newly generated credentials
+      setCredentialsData({
+        title: 'Cấp lại API Key & Secret thành công',
+        merchantName: merchant.name,
+        merchantCode: merchant.code,
+        apiKey: result.apiKey,
+        secret: result.secret,
+      })
     },
   })
 
-  const handleOpenDetail = (record: MerchantItem) => {
-    setSelectedMerchant(record)
-    setDetailModalVisible(true)
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleOpenEdit = (record: MerchantItem) => {
+    setEditingMerchant(record)
+    editForm.setFieldsValue({
+      name: record.name,
+      webhookUrl: record.webhookUrl || '',
+      isActive: record.status === 'ACTIVE',
+    })
+    setEditModalVisible(true)
   }
 
+  const handleEditSubmit = () => {
+    editForm.validateFields().then((values) => {
+      if (!editingMerchant) return
+      updateMutation.mutate({
+        id: editingMerchant.id,
+        data: {
+          name: values.name.trim(),
+          webhookUrl: values.webhookUrl?.trim() || undefined,
+          isActive: values.isActive,
+        },
+      })
+    })
+  }
+
+  const handleCreateSubmit = () => {
+    createForm.validateFields().then((values) => {
+      createMutation.mutate({
+        merchantId: values.merchantId.trim(),
+        name: values.name.trim(),
+        webhookUrl: values.webhookUrl?.trim() || undefined,
+      })
+    })
+  }
+
+  const handleSearchSubmit = (values: { keyword?: string; status?: MerchantStatus }) => {
+    setKeyword(values.keyword || '')
+    setFilters({
+      status: values.status,
+    })
+  }
+
+  const handleFilterReset = () => {
+    filterForm.resetFields()
+    handleReset()
+  }
+
+  const handleCopyBothCredentials = async (apiKey: string, secret: string) => {
+    const textToCopy = `API Key: ${apiKey}\nHMAC Secret: ${secret}`
+    try {
+      await navigator.clipboard.writeText(textToCopy)
+      message.success('Đã sao chép cả API Key và Secret vào bộ nhớ tạm!')
+    } catch {
+      message.error('Không thể tự động sao chép, vui lòng sao chép thủ công.')
+    }
+  }
+
+  // ── Table Columns ──────────────────────────────────────────────────────────
   const columns: AppTableColumns<MerchantItem> = [
     {
       title: 'Mã Merchant Code',
       dataIndex: 'code',
       key: 'code',
-      width: 170,
+      width: 180,
       render: (code) => <Text copyable strong>{code}</Text>,
     },
     {
       title: 'Tên đối tác',
       dataIndex: 'name',
       key: 'name',
-      width: 200,
+      width: 220,
       render: (name) => <Text strong>{name}</Text>,
     },
     {
@@ -130,42 +223,54 @@ export const MerchantListPage: React.FC = () => {
       dataIndex: 'contactEmail',
       key: 'contactEmail',
       width: 200,
+      render: (email) => <Text type="secondary">{email || '-'}</Text>,
     },
     {
       title: 'API Key (HMAC)',
       dataIndex: 'apiKey',
       key: 'apiKey',
       width: 240,
-      render: (key) => <Text copyable code>{key}</Text>,
+      render: (key) => (
+        <Text copyable code style={{ fontSize: 12 }}>
+          {key}
+        </Text>
+      ),
     },
     {
       title: 'Webhook URL Callback',
       dataIndex: 'webhookUrl',
       key: 'webhookUrl',
-      width: 260,
-      render: (url) => (url ? <Text copyable ellipsis>{url}</Text> : <Text type="secondary">-</Text>),
+      width: 240,
+      render: (url) => (
+        url ? (
+          <Text copyable ellipsis style={{ maxWidth: 220 }}>
+            {url}
+          </Text>
+        ) : (
+          <Text type="secondary">Chưa thiết lập</Text>
+        )
+      ),
     },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
-      width: 130,
-      align: 'center',
-      render: (status) => <StatusTag status={status} useBadge />,
+      width: 140,
+      render: (status) => <StatusTag status={status} />,
     },
     {
-      title: 'Ngày tham gia',
+      title: 'Ngày tạo',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      width: 170,
+      width: 160,
       render: (date) => formatDate(date),
     },
   ]
 
   return (
     <PageContainer
-      title="Quản lý Đối tác Merchant"
-      subTitle="Cấu hình thông tin tích hợp Payment Gateway, API Key và Webhook Callback"
+      title="Quản lý đối tác Merchant"
+      subTitle="Cấu hình tài khoản Merchant, cấp phát API Key / HMAC Secret và địa chỉ Webhook"
       extra={
         <Button
           type="primary"
@@ -176,21 +281,34 @@ export const MerchantListPage: React.FC = () => {
         </Button>
       }
     >
+      {/* Search & Filter */}
       <AppFilter
         form={filterForm}
-        onSearch={(vals) => setKeyword(vals.keyword || '')}
-        onReset={() => {
-          filterForm.resetFields()
-          handleReset()
-        }}
+        onSearch={handleSearchSubmit}
+        onReset={handleFilterReset}
       >
         <Col xs={24} sm={12} md={8}>
-          <Form.Item name="keyword" label="Tìm kiếm" style={{ marginBottom: 0 }}>
-            <Input placeholder="Mã merchant, tên đối tác, email..." allowClear />
+          <Form.Item name="keyword" label="Tìm kiếm nhanh" style={{ marginBottom: 0 }}>
+            <Input placeholder="Mã Merchant, tên đối tác, webhook..." allowClear />
+          </Form.Item>
+        </Col>
+
+        <Col xs={24} sm={12} md={6}>
+          <Form.Item name="status" label="Trạng thái" style={{ marginBottom: 0 }}>
+            <Select
+              placeholder="Tất cả trạng thái"
+              allowClear
+              options={[
+                { label: 'Tất cả', value: '' },
+                { label: 'Đang hoạt động (ACTIVE)', value: 'ACTIVE' },
+                { label: 'Tạm khóa (SUSPENDED)', value: 'SUSPENDED' },
+              ]}
+            />
           </Form.Item>
         </Col>
       </AppFilter>
 
+      {/* Main Merchants Table */}
       <AppTable<MerchantItem>
         rowKey="id"
         columns={columns}
@@ -202,25 +320,39 @@ export const MerchantListPage: React.FC = () => {
         actionColumn={{
           title: 'Thao tác',
           width: 140,
-          fixed: 'right',
           render: (_, record) => (
             <ActionMenu
               items={[
                 {
-                  key: 'view',
-                  label: 'Chi tiết',
-                  icon: <EyeOutlined />,
-                  onClick: () => handleOpenDetail(record),
+                  key: 'edit',
+                  label: 'Chỉnh sửa',
+                  icon: <EditOutlined />,
+                  onClick: () => handleOpenEdit(record),
                 },
                 {
-                  key: 'regen',
-                  label: 'Cấp lại API Key',
+                  key: 'regenerate',
+                  label: 'Cấp lại API Key & Secret',
                   icon: <KeyOutlined />,
+                  onClick: () => regenerateMutation.mutate(record),
                   confirm: {
-                    title: 'Xác nhận cấp lại API Key?',
-                    description: `Hành động này sẽ tạo cặp API Key & Secret mới và vô hiệu hóa khóa cũ của ${record.code}.`,
+                    title: 'Xác nhận cấp lại API Key & HMAC Secret?',
+                    description: `API Key và Secret hiện tại của "${record.name}" sẽ bị vô hiệu hóa ngay lập tức. Các hệ thống tích hợp cũ sẽ không thể gọi API cho đến khi cập nhật khóa mới.`,
+                    okText: 'Cấp khóa mới',
+                    cancelText: 'Hủy',
                   },
-                  onClick: () => regenKeysMutation.mutate(record.id || record.code),
+                },
+                {
+                  key: 'delete',
+                  label: 'Xoá Merchant',
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                  onClick: () => deleteMutation.mutate(record.id),
+                  confirm: {
+                    title: `Xác nhận xóa đối tác "${record.name}"?`,
+                    description: 'Hành động này không thể hoàn tác. Mọi kết nối API của merchant này sẽ bị chặn.',
+                    okText: 'Xác nhận xóa',
+                    cancelText: 'Hủy',
+                  },
                 },
               ]}
             />
@@ -228,146 +360,182 @@ export const MerchantListPage: React.FC = () => {
         }}
       />
 
-      {/* Modal Create Merchant */}
+      {/* ── Modal 1: Create Merchant Form ──────────────────────────────────── */}
       <Modal
-        title="Thêm Đối tác Merchant Mới"
+        title="Thêm mới đối tác Merchant"
         open={createModalVisible}
-        onCancel={() => setCreateModalVisible(false)}
-        onOk={() => createForm.submit()}
+        onCancel={() => {
+          setCreateModalVisible(false)
+          createForm.resetFields()
+        }}
+        onOk={handleCreateSubmit}
         confirmLoading={createMutation.isPending}
+        okText="Tạo Merchant"
+        cancelText="Hủy"
         destroyOnClose
+        width={560}
       >
-        <Form
-          form={createForm}
-          layout="vertical"
-          onFinish={(values) => createMutation.mutate(values)}
-        >
+        <Alert
+          message="Khởi tạo thông tin bảo mật tự động"
+          description="Hệ thống sẽ tự động sinh cặp API Key và HMAC Secret an toàn cho Merchant sau khi tạo thành công."
+          type="info"
+          showIcon
+          style={{ marginTop: 12, marginBottom: 20 }}
+        />
+
+        <Form form={createForm} layout="vertical" preserve={false}>
           <Form.Item
-            name="code"
-            label="Mã định danh Merchant (Merchant Code)"
+            name="merchantId"
+            label="Mã định danh Merchant (Merchant ID / Code)"
             rules={[
               { required: true, message: 'Vui lòng nhập mã Merchant' },
-              { pattern: /^[A-Za-z0-9_-]+$/, message: 'Mã chỉ chứa chữ cái, số, gạch ngang và gạch dưới' },
+              {
+                pattern: /^[a-zA-Z0-9_-]+$/,
+                message: 'Chỉ chấp nhận chữ cái, số, dấu gạch nối (-) hoặc gạch dưới (_)',
+              },
             ]}
           >
-            <Input placeholder="Ví dụ: MCH-TIKI, MCH-SHOPEE" />
+            <Input placeholder="Ví dụ: ecommerce-shop-alpha, lazada-vn..." />
           </Form.Item>
 
           <Form.Item
             name="name"
-            label="Tên thương mại Merchant"
+            label="Tên doanh nghiệp / Đối tác"
             rules={[{ required: true, message: 'Vui lòng nhập tên đối tác' }]}
           >
-            <Input placeholder="Ví dụ: Tiki Corporation, Shopee Mall..." />
-          </Form.Item>
-
-          <Form.Item
-            name="contactEmail"
-            label="Email nhận thông báo kỹ thuật"
-            rules={[
-              { type: 'email', message: 'Email không đúng định dạng' },
-            ]}
-          >
-            <Input placeholder="tech@merchant.com" />
+            <Input placeholder="Ví dụ: Cửa hàng Điện tử Alpha, Fashion Hub..." />
           </Form.Item>
 
           <Form.Item
             name="webhookUrl"
-            label="Webhook URL Endpoint (Tùy chọn)"
+            label="Địa chỉ Webhook nhận callback (Tùy chọn)"
+            rules={[
+              {
+                type: 'url',
+                message: 'Vui lòng nhập đúng định dạng URL (http:// hoặc https://)',
+              },
+            ]}
           >
-            <Input placeholder="https://merchant.com/api/payment-callback" />
+            <Input placeholder="https://api.partner.com/webhooks/payments" />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Modal Merchant Detail */}
+      {/* ── Modal 2: Edit Merchant Form ────────────────────────────────────── */}
       <Modal
-        title={`Thông tin chi tiết Merchant: ${selectedMerchant?.name}`}
-        open={detailModalVisible}
-        onCancel={() => setDetailModalVisible(false)}
-        footer={[
-          <Button key="close" type="primary" onClick={() => setDetailModalVisible(false)}>
-            Đóng
-          </Button>,
-        ]}
+        title={`Chỉnh sửa Merchant: ${editingMerchant?.name}`}
+        open={editModalVisible}
+        onCancel={() => {
+          setEditModalVisible(false)
+          setEditingMerchant(null)
+          editForm.resetFields()
+        }}
+        onOk={handleEditSubmit}
+        confirmLoading={updateMutation.isPending}
+        okText="Lưu thay đổi"
+        cancelText="Hủy"
+        destroyOnClose
+        width={540}
       >
-        {selectedMerchant && (
-          <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="ID hệ thống">
-              <Text code>{selectedMerchant.id}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Mã Merchant">
-              <Text copyable strong>{selectedMerchant.code}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Tên đối tác">{selectedMerchant.name}</Descriptions.Item>
-            <Descriptions.Item label="Email liên hệ">{selectedMerchant.contactEmail}</Descriptions.Item>
-            <Descriptions.Item label="API Key hiện tại">
-              <Text copyable code>{selectedMerchant.apiKey}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Webhook Callback URL">
-              {selectedMerchant.webhookUrl ? (
-                <Text copyable>{selectedMerchant.webhookUrl}</Text>
-              ) : (
-                <Text type="secondary">Chưa cấu hình</Text>
-              )}
-            </Descriptions.Item>
-            <Descriptions.Item label="Trạng thái">
-              <Tag color={selectedMerchant.status === 'ACTIVE' ? 'success' : 'error'}>
-                {selectedMerchant.status}
-              </Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="Ngày tạo">
-              {formatDate(selectedMerchant.createdAt)}
-            </Descriptions.Item>
-          </Descriptions>
-        )}
+        <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item
+            name="name"
+            label="Tên doanh nghiệp / Đối tác"
+            rules={[{ required: true, message: 'Vui lòng nhập tên đối tác' }]}
+          >
+            <Input />
+          </Form.Item>
+
+          <Form.Item
+            name="webhookUrl"
+            label="Địa chỉ Webhook nhận callback"
+            rules={[
+              {
+                type: 'url',
+                message: 'Vui lòng nhập đúng định dạng URL (http:// hoặc https://)',
+              },
+            ]}
+          >
+            <Input placeholder="https://api.partner.com/webhooks/payments" />
+          </Form.Item>
+
+          <Form.Item
+            name="isActive"
+            label="Trạng thái kích hoạt"
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="HOẠT ĐỘNG" unCheckedChildren="TẠM KHÓA" />
+          </Form.Item>
+        </Form>
       </Modal>
 
-      {/* Modal Key Generation Result */}
+      {/* ── Modal 3: Show Newly Generated Credentials (One-time Display) ───── */}
       <Modal
-        title="Thông tin Chứng thực API (API Credentials)"
-        open={keyResultModalVisible}
-        onCancel={() => setKeyResultModalVisible(false)}
+        title={
+          <Space>
+            <SafetyCertificateOutlined style={{ color: '#52c41a' }} />
+            <span>{credentialsData?.title || 'Thông tin xác thực Merchant'}</span>
+          </Space>
+        }
+        open={Boolean(credentialsData)}
+        onCancel={() => setCredentialsData(null)}
+        width={600}
         footer={[
-          <Button key="ok" type="primary" onClick={() => setKeyResultModalVisible(false)}>
-            Tôi đã lưu thông tin
+          <Button
+            key="copy"
+            icon={<CopyOutlined />}
+            onClick={() => {
+              if (credentialsData) {
+                handleCopyBothCredentials(credentialsData.apiKey, credentialsData.secret)
+              }
+            }}
+          >
+            Sao chép cả hai khóa
+          </Button>,
+          <Button
+            key="ok"
+            type="primary"
+            onClick={() => setCredentialsData(null)}
+          >
+            Đã lưu khóa an toàn
           </Button>,
         ]}
       >
-        <Alert
-          message="Lưu ý bảo mật quan trọng"
-          description="Khóa Secret (HMAC Secret) chỉ được hiển thị một lần duy nhất tại đây. Hãy lưu trữ an toàn để cấu hình ký HMAC-SHA256 cho các cuộc gọi Payment API."
-          type="warning"
-          showIcon
-          icon={<CheckCircleOutlined />}
-          style={{ marginBottom: 16 }}
-        />
+        {credentialsData && (
+          <div style={{ marginTop: 12 }}>
+            <Alert
+              message="LƯU Ý BẢO MẬT QUAN TRỌNG"
+              description="HMAC Secret chỉ hiển thị duy nhất một lần tại màn hình này. Hãy sao chép và lưu trữ an toàn. Bạn sẽ không thể xem lại secret sau khi đóng hộp thoại này."
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
 
-        {generatedKeys && (
-          <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-            <div style={{ marginBottom: 12 }}>
-              <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
-                Mã Merchant:
-              </Text>
-              <Text strong copyable>{generatedKeys.code}</Text>
-            </div>
+            <Paragraph>
+              Đối tác: <strong>{credentialsData.merchantName}</strong>
+              {credentialsData.merchantCode && (
+                <span> (Mã: <code>{credentialsData.merchantCode}</code>)</span>
+              )}
+            </Paragraph>
 
-            <div style={{ marginBottom: 12 }}>
-              <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
-                API Key (Header X-Api-Key):
-              </Text>
-              <Paragraph copyable code style={{ marginBottom: 0 }}>
-                {generatedKeys.apiKey}
-              </Paragraph>
-            </div>
+            <div style={{ background: '#f5f5f5', padding: 16, borderRadius: 8 }}>
+              <div style={{ marginBottom: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  API KEY:
+                </Text>
+                <Text copyable strong code style={{ fontSize: 13 }}>
+                  {credentialsData.apiKey}
+                </Text>
+              </div>
 
-            <div>
-              <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
-                HMAC Secret Key:
-              </Text>
-              <Paragraph copyable code style={{ marginBottom: 0, color: '#cf1322' }}>
-                {generatedKeys.secret}
-              </Paragraph>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  HMAC SECRET KEY:
+                </Text>
+                <Text copyable strong code style={{ fontSize: 13, color: '#cf1322' }}>
+                  {credentialsData.secret}
+                </Text>
+              </div>
             </div>
           </div>
         )}

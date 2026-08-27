@@ -1,3 +1,5 @@
+export type WalletAccountStatus = 'ACTIVE' | 'FROZEN' | 'CLOSED'
+
 export interface WalletAccountItem {
   id: string
   accountNumber: string
@@ -7,7 +9,7 @@ export interface WalletAccountItem {
   currency: string
   availableBalance: number
   ledgerBalance: number
-  status: 'ACTIVE' | 'FROZEN' | 'CLOSED'
+  status: WalletAccountStatus
   createdAt: string
   updatedAt?: string
 }
@@ -23,5 +25,44 @@ export interface AccountFilterParams {
 export interface TopUpFormData {
   accountNumber: string
   amount: number
-  description: string
+  description?: string
+}
+
+export interface TopUpResult {
+  id: string
+  accountNumber: string
+  customerName: string
+  availableBalance: number
+  ledgerBalance: number
+  transactionId: string
+}
+
+export interface FreezeWalletPayload {
+  status: 'ACTIVE' | 'FROZEN'
+}
+
+export interface FreezeWalletResult {
+  id: string
+  accountNumber: string
+  status: 'ACTIVE' | 'FROZEN'
+}
+
+export interface WalletBalanceInfo {
+  id: string
+  accountNumber: string
+  currency: string
+  customerName: string
+  availableBalance: number
+  ledgerBalance: number
+}
+
+export interface WalletLedgerEntry {
+  id: string
+  ledgerTransactionId: string
+  accountType: string
+  amount: number
+  currency: string
+  isDebit: boolean
+  entryType: 'DEBIT' | 'CREDIT'
+  createdAt: string
 }

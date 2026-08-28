@@ -4,62 +4,19 @@ using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Payments.Domain;
 using MiniBanking.SharedKernel;
-using MiniBanking.SharedKernel.Behaviors;
 using MiniBanking.SharedKernel.Contracts;
 using System.Text.Json;
 
-namespace MiniBanking.Modules.Payments.Application;
+namespace MiniBanking.Modules.Payments.Application.CreateRefund;
 
-public sealed record CreateRefundRequest(
-    string MerchantRefundId,
-    Guid PaymentId,
-    long Amount,
-    string Currency,
-    string Reason);
-
-public sealed record CreateRefundResponse(
-    Guid RefundId,
-    string MerchantRefundId,
-    Guid PaymentId,
-    string Status,
-    long Amount,
-    string Currency,
-    string? FailureCode);
-
-public sealed class CreateRefundCommand : IRequest<CreateRefundResponse>, ITransactionalRequest
-{
-    public string MerchantId { get; }
-    public string IdempotencyKey { get; }
-    public string RequestMethod { get; }
-    public string RequestPath { get; }
-    public string RequestBody { get; }
-    public CreateRefundRequest Request { get; }
-
-    public CreateRefundCommand(
-        string merchantId,
-        string idempotencyKey,
-        string requestMethod,
-        string requestPath,
-        string requestBody,
-        CreateRefundRequest request)
-    {
-        MerchantId = merchantId;
-        IdempotencyKey = idempotencyKey;
-        RequestMethod = requestMethod;
-        RequestPath = requestPath;
-        RequestBody = requestBody;
-        Request = request;
-    }
-}
-
-public sealed class CreateRefundCommandHandler : IRequestHandler<CreateRefundCommand, CreateRefundResponse>
+public sealed class CreateRefundHandler : IRequestHandler<CreateRefundCommand, CreateRefundResponse>
 {
     private readonly MiniBankingDbContext _dbContext;
     private readonly IIdempotencyService _idempotencyService;
     private readonly IAccountLockService _accountLockService;
     private readonly ILedgerPostingService _ledgerPostingService;
 
-    public CreateRefundCommandHandler(
+    public CreateRefundHandler(
         MiniBankingDbContext dbContext,
         IIdempotencyService idempotencyService,
         IAccountLockService accountLockService,

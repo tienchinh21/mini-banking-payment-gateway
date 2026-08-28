@@ -7,7 +7,7 @@ using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Accounts.Application.Services;
 using MiniBanking.Modules.Accounts.Endpoints;
-using MiniBanking.Modules.Admin;
+using MiniBanking.Modules.Admin.Endpoints;
 using MiniBanking.Modules.Ledger.Application.Services;
 using MiniBanking.Modules.Ledger.Endpoints;
 using MiniBanking.Modules.Payments.Application.Services;

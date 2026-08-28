@@ -17,7 +17,7 @@ using MiniBanking.Modules.Payments.Application;
 using MiniBanking.Modules.Payments.Domain;
 using MiniBanking.SharedKernel;
 
-namespace MiniBanking.Modules.Admin;
+namespace MiniBanking.Modules.Admin.Endpoints;
 
 public static class AdminEndpoints
 {

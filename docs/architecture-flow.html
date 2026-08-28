@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mô Phỏng Kiến Trúc Banking & Payment Gateway</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: #131d31;
+      --card-border: #1e293b;
+      --primary: #38bdf8;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --purple: #c084fc;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      padding: 16px 28px;
+      background: rgba(19, 29, 49, 0.9);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, #0284c7, #6366f1);
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .logo-text h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .logo-text p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Stepper Bar */
+    .stepper-nav {
+      display: flex;
+      gap: 8px;
+      background: #080d1a;
+      padding: 6px;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      overflow-x: auto;
+      max-width: 100%;
+    }
+
+    .step-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .step-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .step-btn.active {
+      background: #0284c7;
+      color: #ffffff;
+      box-shadow: 0 0 15px rgba(2, 132, 199, 0.5);
+    }
+
+    .step-btn .circle {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+    }
+
+    .step-btn.active .circle {
+      background: #ffffff;
+      color: #0284c7;
+      font-weight: 700;
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      padding: 24px 28px;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 24px;
+      max-width: 1600px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    @media (max-width: 1100px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Left Column: Visual Map */
+    .visual-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+    }
+
+    .card-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-title h2 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .playback-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-ctrl {
+      background: #080d1a;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-ctrl:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .btn-ctrl.primary {
+      background: #0284c7;
+      border-color: #0284c7;
+      color: white;
+    }
+
+    /* SVG Diagram Area */
+    .diagram-wrapper {
+      background: #070c17;
+      border: 1px solid #172033;
+      border-radius: 12px;
+      padding: 10px;
+      position: relative;
+      min-height: 400px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    svg#archSvg {
+      width: 100%;
+      height: 100%;
+      max-height: 440px;
+      overflow: visible;
+    }
+
+    /* SVG Components */
+    .node-box {
+      fill: #131d31;
+      stroke: #26354f;
+      stroke-width: 2;
+      rx: 12;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .node-box:hover {
+      stroke: #38bdf8;
+    }
+
+    .node-box.active {
+      fill: #172642;
+      stroke: #38bdf8;
+      stroke-width: 3;
+      filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.5));
+    }
+
+    .node-box.active-postgres {
+      stroke: #34d399;
+      filter: drop-shadow(0 0 12px rgba(52, 211, 153, 0.5));
+    }
+
+    .node-box.active-rabbitmq {
+      stroke: #fbbf24;
+      filter: drop-shadow(0 0 12px rgba(251, 191, 36, 0.5));
+    }
+
+    .node-box.active-redis {
+      stroke: #f87171;
+      filter: drop-shadow(0 0 12px rgba(248, 113, 113, 0.5));
+    }
+
+    .node-title {
+      fill: #f8fafc;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: inherit;
+    }
+
+    .node-desc {
+      fill: #94a3b8;
+      font-size: 11px;
+      font-family: inherit;
+    }
+
+    .flow-line {
+      fill: none;
+      stroke: #1e293b;
+      stroke-width: 2.5;
+      stroke-dasharray: 6 6;
+      transition: all 0.3s ease;
+    }
+
+    .flow-line.active {
+      stroke: #38bdf8;
+      stroke-width: 3.5;
+      stroke-dasharray: 8 4;
+      animation: dash 1s linear infinite;
+    }
+
+    .flow-line.active-postgres {
+      stroke: #34d399;
+      stroke-width: 3.5;
+      stroke-dasharray: 8 4;
+      animation: dash 1s linear infinite;
+    }
+
+    .flow-line.active-rabbitmq {
+      stroke: #fbbf24;
+      stroke-width: 3.5;
+      stroke-dasharray: 8 4;
+      animation: dash 1s linear infinite;
+    }
+
+    .flow-line.active-redis {
+      stroke: #f87171;
+      stroke-width: 3.5;
+      stroke-dasharray: 8 4;
+      animation: dash 1s linear infinite;
+    }
+
+    @keyframes dash {
+      to {
+        stroke-dashoffset: -24;
+      }
+    }
+
+    /* Live State Simulator */
+    .state-simulator {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .state-box {
+      background: #080d1a;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+
+    .state-box .lbl {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .state-box .val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    /* Right Column: Deep Dive & Explanation */
+    .detail-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .step-header {
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 14px;
+    }
+
+    .step-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--primary);
+      background: rgba(56, 189, 248, 0.1);
+      padding: 4px 8px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+
+    .step-header h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.3;
+    }
+
+    .explain-block {
+      background: #080d1a;
+      border-radius: 10px;
+      border: 1px solid #1a263d;
+      padding: 14px;
+    }
+
+    .explain-block h4 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .explain-block.what h4 { color: var(--primary); }
+    .explain-block.why h4 { color: var(--warning); }
+    .explain-block.danger h4 { color: var(--danger); }
+
+    .explain-block p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    .code-box {
+      background: #050811;
+      border: 1px solid #1b253b;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #7dd3fc;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+
+    .table-view {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      margin-top: 6px;
+    }
+
+    .table-view th, .table-view td {
+      border: 1px solid #1e293b;
+      padding: 6px 10px;
+      text-align: left;
+    }
+
+    .table-view th {
+      background: #0f172a;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .debit { color: #f87171; font-weight: 600; }
+    .credit { color: #34d399; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="logo-area">
+      <div class="logo-badge">⚡</div>
+      <div class="logo-text">
+        <h1>Mini Banking & Payment Gateway</h1>
+        <p>Production Lifecycle: E-commerce ➔ Redis ➔ PostgreSQL ➔ RabbitMQ ➔ Webhook</p>
+      </div>
+    </div>
+
+    <!-- Stepper Navigation -->
+    <div class="stepper-nav">
+      <button class="step-btn active" onclick="goToStep(0)">
+        <span class="circle">1</span> 🛒 Ký HMAC
+      </button>
+      <button class="step-btn" onclick="goToStep(1)">
+        <span class="circle">2</span> ⚡ Redis Idempotency
+      </button>
+      <button class="step-btn" onclick="goToStep(2)">
+        <span class="circle">3</span> 🔒 Postgres Row Lock
+      </button>
+      <button class="step-btn" onclick="goToStep(3)">
+        <span class="circle">4</span> ⚖️ Sổ Cái Kép (Ledger)
+      </button>
+      <button class="step-btn" onclick="goToStep(4)">
+        <span class="circle">5</span> 📦 Transactional Outbox
+      </button>
+      <button class="step-btn" onclick="goToStep(5)">
+        <span class="circle">6</span> 🐰 RabbitMQ & Webhook
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main>
+    <!-- Left Column: Interactive Visual Architecture -->
+    <div class="visual-card">
+      <div class="card-title">
+        <h2>🗺️ Sơ Đồ Luồng Tương Tác Trực Quan</h2>
+        <div class="playback-controls">
+          <button class="btn-ctrl" onclick="prevStep()">⬅️ Trước</button>
+          <button class="btn-ctrl primary" id="btnAutoPlay" onclick="toggleAutoPlay()">▶️ Tự động chạy</button>
+          <button class="btn-ctrl" onclick="nextStep()">Tiếp theo ➡️</button>
+        </div>
+      </div>
+
+      <!-- SVG Map with Exact Coordinates -->
+      <div class="diagram-wrapper">
+        <svg id="archSvg" viewBox="0 0 800 460">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-fit">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8" />
+            </marker>
+            <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-fit">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#34d399" />
+            </marker>
+            <marker id="arrow-yellow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-fit">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#fbbf24" />
+            </marker>
+            <marker id="arrow-red" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-fit">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#f87171" />
+            </marker>
+          </defs>
+
+          <!-- CONNECTING PATHS -->
+          <!-- 1. Ecom -> API -->
+          <path id="path-ecom-api" class="flow-line" d="M 180 180 L 320 180" />
+          
+          <!-- 2. API -> Redis -->
+          <path id="path-api-redis" class="flow-line" d="M 400 140 L 400 80 L 530 80" />
+
+          <!-- 3. API -> Postgres (Lock & Ledger) -->
+          <path id="path-api-postgres" class="flow-line" d="M 480 180 L 600 180" />
+
+          <!-- 4. Postgres -> Outbox Worker -->
+          <path id="path-postgres-outbox" class="flow-line" d="M 680 230 L 680 320 L 520 320" />
+
+          <!-- 5. Outbox Worker -> RabbitMQ -->
+          <path id="path-outbox-rabbit" class="flow-line" d="M 400 360 L 400 400 L 220 400" />
+
+          <!-- 6. RabbitMQ -> Webhook Worker -> Ecom -->
+          <path id="path-rabbit-webhook" class="flow-line" d="M 140 360 L 140 230" />
+
+          <!-- NODES (COMPONENTS) -->
+          <!-- Node: E-commerce -->
+          <g id="node-ecom" class="node-group" onclick="goToStep(0)">
+            <rect class="node-box" x="30" y="130" width="150" height="100" />
+            <text x="50" y="165" class="node-title">🛒 E-commerce</text>
+            <text x="50" y="185" class="node-desc">Merchant Website</text>
+            <text x="50" y="205" class="node-desc" style="fill:#38bdf8;">Client Calling API</text>
+          </g>
+
+          <!-- Node: .NET 8 Web API -->
+          <g id="node-api" class="node-group" onclick="goToStep(1)">
+            <rect class="node-box" x="320" y="130" width="160" height="100" />
+            <text x="340" y="165" class="node-title">🛡️ .NET 8 Web API</text>
+            <text x="340" y="185" class="node-desc">Banking Core Gateway</text>
+            <text x="340" y="205" class="node-desc" style="fill:#c084fc;">Auth & Dispatcher</text>
+          </g>
+
+          <!-- Node: Redis -->
+          <g id="node-redis" class="node-group" onclick="goToStep(1)">
+            <rect class="node-box" x="530" y="40" width="160" height="80" />
+            <text x="550" y="75" class="node-title">⚡ Redis Cache</text>
+            <text x="550" y="95" class="node-desc">Nonce & Idempotency</text>
+          </g>
+
+          <!-- Node: PostgreSQL -->
+          <g id="node-postgres" class="node-group" onclick="goToStep(2)">
+            <rect class="node-box" x="600" y="130" width="170" height="100" />
+            <text x="620" y="165" class="node-title">🗄️ PostgreSQL 16</text>
+            <text x="620" y="185" class="node-desc">FOR UPDATE & Ledger</text>
+            <text x="620" y="205" class="node-desc" style="fill:#34d399;">ACID & Outbox Table</text>
+          </g>
+
+          <!-- Node: Outbox Worker -->
+          <g id="node-outbox" class="node-group" onclick="goToStep(4)">
+            <rect class="node-box" x="350" y="280" width="170" height="80" />
+            <text x="370" y="315" class="node-title">📦 Outbox Publisher</text>
+            <text x="370" y="335" class="node-desc">Background Service</text>
+          </g>
+
+          <!-- Node: RabbitMQ -->
+          <g id="node-rabbitmq" class="node-group" onclick="goToStep(5)">
+            <rect class="node-box" x="60" y="300" width="160" height="90" />
+            <text x="80" y="335" class="node-title">🐰 RabbitMQ</text>
+            <text x="80" y="355" class="node-desc">Exchange & Topics</text>
+            <text x="80" y="375" class="node-desc" style="fill:#fbbf24;">Webhook Consumer</text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- Live State Simulator Bar -->
+      <div class="state-simulator">
+        <div class="state-box">
+          <div class="lbl">Trạng thái đơn hàng</div>
+          <div class="val" id="stateOrder">⏳ CHỜ THANH TOÁN</div>
+        </div>
+        <div class="state-box">
+          <div class="lbl">Số dư ví khách</div>
+          <div class="val" id="stateBalance">1,000,000 đ</div>
+        </div>
+        <div class="state-box">
+          <div class="lbl">PostgreSQL Lock</div>
+          <div class="val" id="stateLock">MỞ (UNLOCKED)</div>
+        </div>
+        <div class="state-box">
+          <div class="lbl">Sổ Cái Kép (Ledger)</div>
+          <div class="val" id="stateLedger">CÂN BẰNG (0 Đ)</div>
+        </div>
+        <div class="state-box">
+          <div class="lbl">Outbox Status</div>
+          <div class="val" id="stateOutbox">0 CHỜ XỬ LÝ</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Step by Step Deep-Dive Explanation -->
+    <div class="detail-card">
+      <div class="step-header">
+        <span class="step-tag" id="stepTag">BƯỚC 1 / 6 • SECURITY</span>
+        <h3 id="stepTitle">1. Ký Số HMAC & Bắn Request Thanh Toán</h3>
+      </div>
+
+      <div class="explain-block what">
+        <h4>🎯 Hệ thống làm gì ở bước này?</h4>
+        <p id="stepWhat">
+          E-commerce gửi yêu cầu trừ tiền ví qua API. Để đảm bảo không ai có thể sửa đổi số tiền trên đường truyền (ví dụ: sửa từ 500k thành 50k), E-commerce phải ký chữ ký điện tử HMAC-SHA256 với Secret Key bí mật được cấp trước.
+        </p>
+      </div>
+
+      <div class="explain-block why">
+        <h4>⚡ Chi tiết kỹ thuật & Code thực tế</h4>
+        <div class="code-box" id="stepCode">
+// Header gửi kèm:
+X-Merchant-Id: "merch_01"
+X-Timestamp: "2026-08-27T10:00:00Z"
+X-Nonce: "random-uuid-string"
+Idempotency-Key: "order_9999_attempt_1"
+X-Signature: HMACSHA256(Method + Path + BodyHash + Timestamp + Nonce + IdempotencyKey, Secret)
+        </div>
+      </div>
+
+      <div class="explain-block danger">
+        <h4>⚠️ Nếu không có bước này thì xảy ra lỗi gì?</h4>
+        <p id="stepRisk">
+          Hacker có thể bắt gói tin (Man-in-the-middle) và sửa đổi số tiền thanh toán, hoặc gửi lại gói tin cũ hàng ngàn lần để rút trộm tiền từ ví khách hàng (Replay Attack).
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Data definition for all 6 steps
+    const steps = [
+      {
+        tag: "BƯỚC 1 / 6 • BẢO MẬT & XÁC THỰC",
+        title: "1. Ký Số HMAC & Gửi Request Thanh Toán",
+        activeNodes: ["node-ecom", "node-api"],
+        activeLines: ["path-ecom-api"],
+        lineClass: "active",
+        state: {
+          order: "⏳ CHỜ THANH TOÁN",
+          balance: "1,000,000 đ",
+          lock: "MỞ (UNLOCKED)",
+          ledger: "CÂN BẰNG (0 Đ)",
+          outbox: "CHƯA CÓ TIN NHẮN"
+        },
+        what: "E-commerce Backend chuẩn bị request gồm số tiền (500,000 đ), ID ví khách hàng và các Header bảo mật. Mini Banking API nhận request, tính lại chữ ký HMAC và so sánh trong thời gian cố định (Fixed-time comparison).",
+        code: `// HmacVerificationMiddleware.cs
+var isValid = HmacSignatureService.VerifySignature(
+    method, path, body, timestamp, nonce, idempotencyKey, signature, merchant.Secret);
+
+if (!isValid) return Unauthorized("Chữ ký HMAC không hợp lệ");`,
+        risk: "Không có HMAC, hacker có thể sửa đổi payload trên đường truyền (ví dụ: sửa đơn hàng từ 500.000 đ thành 1.000 đ) hoặc giả mạo Merchant gọi thanh toán trái phép."
+      },
+      {
+        tag: "BƯỚC 2 / 6 • CHỐNG TRỪ TIỀN TRÙNG LẶP",
+        title: "2. Kiểm Tra Nonce & Idempotency Key Trong Redis",
+        activeNodes: ["node-api", "node-redis"],
+        activeLines: ["path-api-redis"],
+        lineClass: "active-redis",
+        state: {
+          order: "⚡ ĐANG XỬ LÝ",
+          balance: "1,000,000 đ",
+          lock: "MỞ (UNLOCKED)",
+          ledger: "CÂN BẰNG (0 Đ)",
+          outbox: "CHƯA CÓ TIN NHẮN"
+        },
+        what: "Khi mạng bị lag/timeout, E-commerce có thể retry gửi lại request 2-3 lần. API kiểm tra Idempotency-Key. Nếu giao dịch đã hoàn thành trước đó, API trả ngay kết quả cũ mà KHÔNG trừ tiền lần thứ hai.",
+        code: `// Kiểm tra IdempotencyRecord
+var existing = await _context.IdempotencyRecords
+    .FirstOrDefaultAsync(r => r.Key == command.IdempotencyKey);
+
+if (existing != null && existing.Status == "Completed")
+    return existing.ResponsePayload; // TRẢ LẠI KẾT QUẢ CŨ NGAY!`,
+        risk: "Nếu không có Idempotency, khi mạng chập chờn khách hàng ấn thanh toán 1 lần nhưng hệ thống backend retry sẽ trừ tiền ví của khách 2 đến 3 lần cho cùng 1 đơn hàng."
+      },
+      {
+        tag: "BƯỚC 3 / 6 • POSTGRESQL ROW LOCK",
+        title: "3. Khóa Bản Ghi Ví Khách Hàng (SELECT FOR UPDATE)",
+        activeNodes: ["node-api", "node-postgres"],
+        activeLines: ["path-api-postgres"],
+        lineClass: "active-postgres",
+        state: {
+          order: "⚡ ĐANG XỬ LÝ",
+          balance: "1,000,000 đ ➔ 500,000 đ",
+          lock: "🔒 ĐÃ KHÓA (LOCKED)",
+          ledger: "ĐANG GHI SỔ CÁI...",
+          outbox: "ĐANG CHUẨN BỊ..."
+        },
+        what: "API bắt đầu 1 PostgreSQL Transaction. Thực hiện lệnh 'SELECT ... FOR UPDATE' để khóa độc quyền dòng ví của khách. Bất kỳ giao dịch rút tiền nào khác đến cùng mili-giây buộc phải xếp hàng đợi.",
+        code: `// CreatePaymentHandler.cs
+await using var tx = await _context.Database.BeginTransactionAsync();
+
+// KHÓA DÒNG BẰNG POSTGRES ROW LOCK
+var balance = await _context.BalanceSnapshots
+    .FromSqlInterpolated($"SELECT * FROM balance_snapshots WHERE WalletAccountId = {walletId} FOR UPDATE")
+    .FirstOrDefaultAsync();`,
+        risk: "Race Condition kinh điển: Tài khoản còn 100k, 2 lệnh rút 80k đến cùng 1 microsecond. Cả 2 cùng đọc số dư là 100k và cùng trừ tiền ➔ Ví bị âm tiền (-60k) gây thất thoát ngân hàng."
+      },
+      {
+        tag: "BƯỚC 4 / 6 • DOUBLE-ENTRY LEDGER",
+        title: "4. Ghi Sổ Cái Kép Cân Bằng (Nợ / Có = 0)",
+        activeNodes: ["node-postgres"],
+        activeLines: ["path-api-postgres"],
+        lineClass: "active-postgres",
+        state: {
+          order: "✅ THANH TOÁN XONG",
+          balance: "500,000 đ (Đã trừ)",
+          lock: "🔒 ĐANG GIỮ TRANSACTION",
+          ledger: "⚖️ CÂN BẰNG (Tổng Nợ = Tổng Có)",
+          outbox: "1 EVENT ĐANG LƯU"
+        },
+        what: "Nguyên tắc ngân hàng: Tiền không tự sinh ra hay mất đi. Mỗi giao dịch tạo ra ít nhất 2 bút toán: Ghi Nợ (Debit) ví khách hàng và Ghi Có (Credit) tài khoản trung gian của hệ thống.",
+        code: `// LedgerTransaction.cs
+var tx = new LedgerTransaction("PAY-01", LedgerTransactionType.Payment, desc);
+tx.AddEntry(userWalletId, "WalletAccount", 500000, isDebit: true);     // NỢ VÍ KHÁCH: -500k
+tx.AddEntry(clearingAccountId, "Clearing", 500000, isDebit: false);   // CÓ TRUNG GIAN: +500k
+
+tx.ValidateInvariant(); // Nợ (500k) == Có (500k) mới được lưu!`,
+        risk: "Nếu chỉ update cột `balance = balance - 500k` như web CRUD thông thường, khi xảy ra sai lệch số dư, bạn sẽ hoàn toàn không có cách nào đối soát, truy vết hay kiểm toán xem tiền đã đi đâu."
+      },
+      {
+        tag: "BƯỚC 5 / 6 • TRANSACTIONAL OUTBOX",
+        title: "5. Lưu Outbox Event Cùng Database Transaction",
+        activeNodes: ["node-postgres", "node-outbox"],
+        activeLines: ["path-postgres-outbox"],
+        lineClass: "active-postgres",
+        state: {
+          order: "✅ ĐÃ TRỪ TIỀN VÍ",
+          balance: "500,000 đ",
+          lock: "🔓 ĐÃ COMMIT & MỞ KHÓA",
+          ledger: "ĐÃ GHI LỊCH SỬ",
+          outbox: "1 TIN NHẮN (PENDING)"
+        },
+        what: "Ghi sự kiện 'PaymentSucceeded' vào bảng `outbox_messages` NẰM TRONG CÙNG TRANSACTION với lệnh trừ tiền. Cả tiền và Event cùng commit một lần duy nhất vào PostgreSQL.",
+        code: `var outboxMessage = new OutboxMessage("PaymentSucceeded", payloadJson);
+_context.OutboxMessages.Add(outboxMessage);
+
+// COMMIT TOÀN BỘ CÙNG LÚC: TIỀN + SỔ CÁI + OUTBOX
+await _context.SaveChangesAsync();
+await tx.CommitAsync();`,
+        risk: "Nếu trừ tiền trong DB xong rồi mới gọi RabbitMQ: nhỡ mạng tới RabbitMQ bị đứt giữa chừng, tiền đã trừ nhưng Event bị mất ➔ Sàn không biết đơn hàng đã thanh toán ➔ Khách bị mất tiền oan mà không có hàng!"
+      },
+      {
+        tag: "BƯỚC 6 / 6 • MESSAGE QUEUE & WEBHOOK",
+        title: "6. Outbox Worker Đẩy RabbitMQ & Bắn Webhook Về Sàn",
+        activeNodes: ["node-outbox", "node-rabbitmq", "node-ecom"],
+        activeLines: ["path-outbox-rabbit", "path-rabbit-webhook"],
+        lineClass: "active-rabbitmq",
+        state: {
+          order: "🎉 ĐƠN HÀNG HOÀN TẤT",
+          balance: "500,000 đ",
+          lock: "MỞ (UNLOCKED)",
+          ledger: "ĐÃ ĐỐI SOÁT",
+          outbox: "ĐÃ BẮN WEBHOOK (PROCESSED)"
+        },
+        what: "OutboxPublisher quét bảng Outbox, đẩy message lên RabbitMQ. Webhook Consumer đọc queue và gọi HTTP POST báo cho E-commerce: 'Đơn hàng 9999 đã thanh toán thành công!'. Nếu server E-commerce lỗi, worker sẽ tự động Retry theo cấp số nhân.",
+        code: `// OutboxPublisher.cs & WebhookConsumer.cs
+channel.BasicPublish("payments.exchange", "payment.succeeded", properties, body);
+message.MarkPublished();
+
+// Consumer gọi Webhook về E-commerce
+await httpClient.PostAsJsonAsync(merchant.WebhookUrl, payload);`,
+        risk: "Nếu bắn Webhook đồng bộ ngay trong API, khi server sàn bị lag sẽ làm nghẽn toàn bộ luồng thanh toán của ngân hàng. Dùng RabbitMQ giúp tách biệt (Decoupling) và retry tự động."
+      }
+    ];
+
+    let currentStep = 0;
+    let autoPlayInterval = null;
+
+    function renderStep(index) {
+      currentStep = index;
+      const data = steps[index];
+
+      // Update Top Nav Buttons
+      document.querySelectorAll('.step-btn').forEach((btn, idx) => {
+        btn.classList.toggle('active', idx === index);
+      });
+
+      // Update Right Detail Panel
+      document.getElementById('stepTag').textContent = data.tag;
+      document.getElementById('stepTitle').textContent = data.title;
+      document.getElementById('stepWhat').textContent = data.what;
+      document.getElementById('stepCode').textContent = data.code;
+      document.getElementById('stepRisk').textContent = data.risk;
+
+      // Update State Simulator
+      document.getElementById('stateOrder').textContent = data.state.order;
+      document.getElementById('stateBalance').textContent = data.state.balance;
+      document.getElementById('stateLock').textContent = data.state.lock;
+      document.getElementById('stateLedger').textContent = data.state.ledger;
+      document.getElementById('stateOutbox').textContent = data.state.outbox;
+
+      // Update SVG Nodes
+      document.querySelectorAll('.node-box').forEach(box => {
+        box.className.baseVal = 'node-box';
+      });
+
+      data.activeNodes.forEach(nodeId => {
+        const grp = document.getElementById(nodeId);
+        if (grp) {
+          const rect = grp.querySelector('.node-box');
+          if (rect) {
+            rect.classList.add('active');
+            if (nodeId === 'node-postgres') rect.classList.add('active-postgres');
+            if (nodeId === 'node-rabbitmq') rect.classList.add('active-rabbitmq');
+            if (nodeId === 'node-redis') rect.classList.add('active-redis');
+          }
+        }
+      });
+
+      // Update SVG Connecting Lines
+      document.querySelectorAll('.flow-line').forEach(line => {
+        line.className.baseVal = 'flow-line';
+      });
+
+      data.activeLines.forEach(lineId => {
+        const line = document.getElementById(lineId);
+        if (line) {
+          line.classList.add(data.lineClass);
+        }
+      });
+    }
+
+    function goToStep(index) {
+      renderStep(index);
+    }
+
+    function nextStep() {
+      const next = (currentStep + 1) % steps.length;
+      renderStep(next);
+    }
+
+    function prevStep() {
+      const prev = (currentStep - 1 + steps.length) % steps.length;
+      renderStep(prev);
+    }
+
+    function toggleAutoPlay() {
+      const btn = document.getElementById('btnAutoPlay');
+      if (autoPlayInterval) {
+        clearInterval(autoPlayInterval);
+        autoPlayInterval = null;
+        btn.textContent = '▶️ Tự động chạy';
+        btn.classList.remove('primary');
+      } else {
+        autoPlayInterval = setInterval(() => {
+          nextStep();
+        }, 3500);
+        btn.textContent = '⏸ Tạm dừng';
+        btn.classList.add('primary');
+      }
+    }
+
+    // Initial render
+    renderStep(0);
+  </script>
+</body>
+</html>

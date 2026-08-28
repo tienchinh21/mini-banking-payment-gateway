@@ -4,7 +4,7 @@ using MiniBanking.Modules.Accounts.Application.Services;
 using MiniBanking.Modules.Accounts.Domain;
 using MiniBanking.Modules.Ledger.Application.Services;
 using MiniBanking.Modules.Ledger.Domain;
-using MiniBanking.Modules.Payments.Application;
+using MiniBanking.Modules.Payments.Application.CreatePayment;
 using MiniBanking.Modules.Payments.Application.Services;
 using MiniBanking.SharedKernel;
 using Xunit;

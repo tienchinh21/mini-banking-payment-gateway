@@ -3,55 +3,12 @@ using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Payments.Domain;
 using MiniBanking.SharedKernel;
-using MiniBanking.SharedKernel.Behaviors;
 using MiniBanking.SharedKernel.Contracts;
 using System.Text.Json;
 
-namespace MiniBanking.Modules.Payments.Application;
+namespace MiniBanking.Modules.Payments.Application.CreatePayment;
 
-public record CreatePaymentRequest(
-    string MerchantOrderId,
-    string WalletAccountId,
-    long Amount,
-    string Currency,
-    string Description,
-    string? CallbackUrl);
-
-public record PaymentResponse(
-    Guid PaymentId,
-    string MerchantOrderId,
-    string Status,
-    long Amount,
-    string Currency,
-    string? FailureCode = null);
-
-public class CreatePaymentCommand : IRequest<PaymentResponse>, ITransactionalRequest
-{
-    public string MerchantId { get; }
-    public string IdempotencyKey { get; }
-    public string RequestMethod { get; }
-    public string RequestPath { get; }
-    public string RequestBody { get; }
-    public CreatePaymentRequest Request { get; }
-
-    public CreatePaymentCommand(
-        string merchantId,
-        string idempotencyKey,
-        string requestMethod,
-        string requestPath,
-        string requestBody,
-        CreatePaymentRequest request)
-    {
-        MerchantId = merchantId;
-        IdempotencyKey = idempotencyKey;
-        RequestMethod = requestMethod;
-        RequestPath = requestPath;
-        RequestBody = requestBody;
-        Request = request;
-    }
-}
-
-public class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, PaymentResponse>
+public sealed class CreatePaymentHandler : IRequestHandler<CreatePaymentCommand, PaymentResponse>
 {
     private readonly MiniBankingDbContext _context;
     private readonly IIdempotencyService _idempotencyService;

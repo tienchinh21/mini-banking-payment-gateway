@@ -8,8 +8,10 @@ using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Accounts.Application.Services;
 using MiniBanking.Modules.Accounts.Endpoints;
 using MiniBanking.Modules.Admin.Endpoints;
+using MiniBanking.Modules.Audit.Endpoints;
 using MiniBanking.Modules.Ledger.Application.Services;
 using MiniBanking.Modules.Ledger.Endpoints;
+using MiniBanking.Modules.Merchants.Endpoints;
 using MiniBanking.Modules.Payments.Application.Services;
 using MiniBanking.Modules.Payments.Endpoints;
 using MiniBanking.SharedKernel;
@@ -233,6 +235,8 @@ try
     app.MapPaymentEndpoints();
     app.MapAccountEndpoints();
     app.MapLedgerEndpoints();
+    app.MapMerchantEndpoints();
+    app.MapAuditEndpoints();
 
     // Demo webhook receiver for local testing
     app.MapPost("/api/v1/demo/webhook-receiver", async (HttpContext context) =>

@@ -1,3 +1,4 @@
+using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -14,6 +15,7 @@ using MiniBanking.Modules.Ledger.Endpoints;
 using MiniBanking.Modules.Merchants.Endpoints;
 using MiniBanking.Modules.Payments.Application.Services;
 using MiniBanking.Modules.Payments.Endpoints;
+using MiniBanking.Modules.Diagnostics.Endpoints;
 using MiniBanking.SharedKernel;
 using MiniBanking.SharedKernel.Behaviors;
 using MiniBanking.SharedKernel.Contracts;
@@ -41,13 +43,16 @@ try
         .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [CorrelationId: {CorrelationId}] {Message:lj}{NewLine}{Exception}"));
 
     // Services
+    builder.Services.AddMemoryCache();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
     
     // MediatR & Pipeline Behaviors
+    builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
     builder.Services.AddMediatR(cfg =>
     {
         cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
+        cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
         cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
     });
 
@@ -191,61 +196,16 @@ try
         await DataSeeder.SeedAsync(dbContext);
     }
 
-    // Health endpoints
-    var healthOptions = new HealthCheckOptions
-    {
-        ResponseWriter = async (context, report) =>
-        {
-            var response = new
-            {
-                Status = report.Status.ToString(),
-                TotalDuration = report.TotalDuration.TotalMilliseconds,
-                Checks = report.Entries.Select(e => new
-                {
-                    Name = e.Key,
-                    Status = e.Value.Status.ToString(),
-                    Duration = e.Value.Duration.TotalMilliseconds,
-                    Exception = e.Value.Exception?.Message
-                })
-            };
-
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(response);
-        }
-    };
-    app.MapHealthChecks("/health", healthOptions);
-    app.MapHealthChecks("/api/v1/health", healthOptions);
-
-    // System info endpoint
-    app.MapGet("/api/v1/system/info", () =>
-    {
-        return Results.Ok(ApiResponse.Ok("Thông tin hệ thống", new
-        {
-            Name = "Mini Banking API",
-            Version = "1.0.0",
-            Framework = ".NET 8",
-            Environment = app.Environment.EnvironmentName
-        }));
-    });
-
     // ─────────────────────────────────────────────────────────────
     // Module Endpoints Registration (Clean Vertical Slice Architecture)
     // ─────────────────────────────────────────────────────────────
+    app.MapSystemEndpoints();
     app.MapAdminEndpoints();
     app.MapPaymentEndpoints();
     app.MapAccountEndpoints();
     app.MapLedgerEndpoints();
     app.MapMerchantEndpoints();
     app.MapAuditEndpoints();
-
-    // Demo webhook receiver for local testing
-    app.MapPost("/api/v1/demo/webhook-receiver", async (HttpContext context) =>
-    {
-        using var reader = new StreamReader(context.Request.Body);
-        var body = await reader.ReadToEndAsync();
-        Log.Information("Received webhook event: {Body}", body);
-        return Results.Ok();
-    });
 
     app.Run();
 }

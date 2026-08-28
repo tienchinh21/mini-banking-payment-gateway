@@ -1,19 +1,14 @@
+using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using MiniBanking.Infrastructure.Persistence;
+using MiniBanking.Modules.Accounts.Application.TopUpWallet;
 using MiniBanking.Modules.Accounts.Domain;
-using MiniBanking.Modules.Ledger.Domain;
 using MiniBanking.SharedKernel;
 
 namespace MiniBanking.Modules.Accounts.Endpoints;
-
-public sealed record TopUpWalletRequest(
-    string AccountNumber,
-    long Amount,
-    string Currency,
-    string? Description);
 
 public sealed record FreezeWalletRequest(string? Reason);
 
@@ -225,57 +220,28 @@ public static class AccountEndpoints
             })));
         });
 
-        adminWalletGroup.MapPost("/top-up", async (TopUpWalletRequest request, MiniBankingDbContext db) =>
+        adminWalletGroup.MapPost("/top-up", async (TopUpWalletRequest request, IMediator mediator) =>
         {
-            if (request.Amount <= 0)
-                return Results.BadRequest(ApiResponse.Fail("Số tiền nạp phải lớn hơn 0."));
-
-            var wallet = await db.WalletAccounts
-                .FirstOrDefaultAsync(w => w.AccountNumber == request.AccountNumber);
-
-            if (wallet is null)
-                return Results.NotFound(ApiResponse.Fail("Không tìm thấy ví tài khoản."));
-
-            var amount = new Money(request.Amount, string.IsNullOrWhiteSpace(request.Currency) ? wallet.Currency : request.Currency);
-
-            await using var tx = await db.Database.BeginTransactionAsync();
             try
             {
-                var snap = await db.BalanceSnapshots
-                    .FromSqlInterpolated($"SELECT * FROM balance_snapshots WHERE \"WalletAccountId\" = {wallet.Id} FOR UPDATE")
-                    .FirstOrDefaultAsync();
-
-                if (snap is null)
-                    return Results.NotFound(ApiResponse.Fail("Không tìm thấy snapshot số dư."));
-
-                snap.Credit(amount);
-
-                var ledgerTx = new LedgerTransaction(
-                    $"TOPUP-{Guid.NewGuid():N}",
-                    LedgerTransactionType.TopUp,
-                    request.Description ?? $"Top-up wallet {wallet.AccountNumber}");
-
-                ledgerTx.AddEntry(SystemAccountIds.PlatformClearing, "PlatformClearing", amount, isDebit: true);
-                ledgerTx.AddEntry(wallet.Id, "WalletAccount", amount, isDebit: false);
-                ledgerTx.ValidateInvariant();
-
-                db.LedgerTransactions.Add(ledgerTx);
-                await db.SaveChangesAsync();
-                await tx.CommitAsync();
-
-                return Results.Ok(ApiResponse.Ok("Nạp tiền vào ví thành công", new
-                {
-                    wallet.AccountNumber,
-                    TopUpAmount = amount.Amount,
-                    wallet.Currency,
-                    NewAvailableBalance = snap.AvailableBalance,
-                    NewLedgerBalance = snap.LedgerBalance,
-                    TransactionId = ledgerTx.Id
-                }));
+                var command = new TopUpWalletCommand(request);
+                var response = await mediator.Send(command);
+                return Results.Ok(ApiResponse.Ok("Nạp tiền vào ví thành công", response));
+            }
+            catch (FluentValidation.ValidationException ex)
+            {
+                return Results.BadRequest(ApiResponse.Fail(string.Join("; ", ex.Errors.Select(e => e.ErrorMessage))));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ApiResponse.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                await tx.RollbackAsync();
                 return Results.BadRequest(ApiResponse.Fail($"Nạp tiền thất bại: {ex.Message}"));
             }
         });

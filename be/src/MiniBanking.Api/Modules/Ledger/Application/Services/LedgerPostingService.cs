@@ -79,4 +79,23 @@ public class LedgerPostingService : ILedgerPostingService
         _dbContext.LedgerTransactions.Add(tx);
         return Task.FromResult(tx);
     }
+
+    public Task<LedgerTransaction> PostTopUpAsync(
+        Guid walletAccountId,
+        Money amount,
+        string description,
+        CancellationToken cancellationToken = default)
+    {
+        var tx = new LedgerTransaction(
+            $"TOPUP-{Guid.NewGuid():N}",
+            LedgerTransactionType.TopUp,
+            description);
+
+        tx.AddEntry(SystemAccountIds.PlatformClearing, "PlatformClearing", amount, isDebit: true);
+        tx.AddEntry(walletAccountId, "WalletAccount", amount, isDebit: false);
+        tx.ValidateInvariant();
+
+        _dbContext.LedgerTransactions.Add(tx);
+        return Task.FromResult(tx);
+    }
 }

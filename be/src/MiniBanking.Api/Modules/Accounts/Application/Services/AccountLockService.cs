@@ -20,10 +20,15 @@ public class AccountLockService : IAccountLockService
         Money amount,
         CancellationToken cancellationToken = default)
     {
-        // Issue SELECT ... FOR UPDATE to lock the balance snapshot row exclusively
-        var balance = await _dbContext.BalanceSnapshots
-            .FromSqlInterpolated($"SELECT * FROM public.balance_snapshots WHERE \"WalletAccountId\" = {walletAccountId} FOR UPDATE")
-            .FirstOrDefaultAsync(cancellationToken);
+        // In PostgreSQL provider, use SELECT ... FOR UPDATE for row-level locking.
+        // In InMemory provider (e.g. testing), fall back to direct LINQ query.
+        var isNpgsql = _dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        var balance = isNpgsql
+            ? await _dbContext.BalanceSnapshots
+                .FromSqlInterpolated($"SELECT * FROM public.balance_snapshots WHERE \"WalletAccountId\" = {walletAccountId} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.BalanceSnapshots
+                .FirstOrDefaultAsync(b => b.WalletAccountId == walletAccountId, cancellationToken);
 
         if (balance is null)
         {
@@ -56,9 +61,13 @@ public class AccountLockService : IAccountLockService
         Money amount,
         CancellationToken cancellationToken = default)
     {
-        var balance = await _dbContext.BalanceSnapshots
-            .FromSqlInterpolated($"SELECT * FROM public.balance_snapshots WHERE \"WalletAccountId\" = {walletAccountId} FOR UPDATE")
-            .FirstOrDefaultAsync(cancellationToken);
+        var isNpgsql = _dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        var balance = isNpgsql
+            ? await _dbContext.BalanceSnapshots
+                .FromSqlInterpolated($"SELECT * FROM public.balance_snapshots WHERE \"WalletAccountId\" = {walletAccountId} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.BalanceSnapshots
+                .FirstOrDefaultAsync(b => b.WalletAccountId == walletAccountId, cancellationToken);
 
         if (balance is null)
         {

@@ -31,4 +31,13 @@ public interface ILedgerPostingService
         Money feeAmount,
         string description,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts a balanced wallet top-up transaction (Debit Clearing, Credit Wallet).
+    /// </summary>
+    Task<LedgerTransaction> PostTopUpAsync(
+        Guid walletAccountId,
+        Money amount,
+        string description,
+        CancellationToken cancellationToken = default);
 }

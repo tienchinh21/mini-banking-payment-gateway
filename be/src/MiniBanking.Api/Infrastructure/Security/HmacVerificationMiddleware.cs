@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Modules.Merchants.Domain;
 using MiniBanking.SharedKernel;
@@ -17,7 +18,7 @@ public class HmacVerificationMiddleware
         _next = next;
     }
 
-    public async Task InvokeAsync(HttpContext context, MiniBankingDbContext dbContext)
+    public async Task InvokeAsync(HttpContext context, MiniBankingDbContext dbContext, IMemoryCache memoryCache)
     {
         var path = context.Request.Path.Value ?? string.Empty;
 
@@ -52,6 +53,13 @@ public class HmacVerificationMiddleware
             return;
         }
 
+        var nonceCacheKey = $"nonce:{merchantId}:{nonce}";
+        if (memoryCache.TryGetValue(nonceCacheKey, out _))
+        {
+            await WriteUnauthorizedResponse(context, "Nonce đã được sử dụng (Replay attack detected).");
+            return;
+        }
+
         var merchant = await dbContext.Merchants
             .FirstOrDefaultAsync(m => m.MerchantId == merchantId && m.ApiKey == apiKey && m.IsActive);
 
@@ -81,6 +89,9 @@ public class HmacVerificationMiddleware
             await WriteUnauthorizedResponse(context, "Chữ ký HMAC không hợp lệ.");
             return;
         }
+
+        // Cache the nonce for the duration of the timestamp tolerance window
+        memoryCache.Set(nonceCacheKey, true, _timestampTolerance);
 
         context.Items["MerchantId"] = merchant.MerchantId;
         context.Items["IdempotencyKey"] = idempotencyKey;

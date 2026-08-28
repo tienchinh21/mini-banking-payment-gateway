@@ -27,6 +27,13 @@ public static class HmacSignatureService
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    public static string ComputeHmac(string payload, string secret)
+    {
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
     public static bool VerifySignature(
         string method,
         string path,

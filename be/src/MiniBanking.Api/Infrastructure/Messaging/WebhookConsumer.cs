@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MiniBanking.Infrastructure.Persistence;
+using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Payments.Domain;
 using Polly;
 using Polly.Retry;
@@ -37,8 +38,21 @@ public class WebhookConsumer : BackgroundService
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _channel = _rabbitMqConnection.CreateChannel();
+
+        // 1. Declare Dead Letter Exchange & Queue (DLQ)
+        _channel.ExchangeDeclare(_options.DeadLetterExchangeName, ExchangeType.Direct, durable: true);
+        _channel.QueueDeclare(_options.DeadLetterQueueName, durable: true, exclusive: false, autoDelete: false);
+        _channel.QueueBind(_options.DeadLetterQueueName, _options.DeadLetterExchangeName, _options.DeadLetterRoutingKey);
+
+        // 2. Declare Main Exchange & Queue with DLQ arguments
+        var queueArgs = new Dictionary<string, object>
+        {
+            { "x-dead-letter-exchange", _options.DeadLetterExchangeName },
+            { "x-dead-letter-routing-key", _options.DeadLetterRoutingKey }
+        };
+
         _channel.ExchangeDeclare(_options.ExchangeName, ExchangeType.Topic, durable: true);
-        _channel.QueueDeclare(_options.QueueName, durable: true, exclusive: false, autoDelete: false);
+        _channel.QueueDeclare(_options.QueueName, durable: true, exclusive: false, autoDelete: false, arguments: queueArgs);
         _channel.QueueBind(_options.QueueName, _options.ExchangeName, _options.RoutingKey);
         _channel.BasicQos(prefetchSize: 0, prefetchCount: 10, global: false);
 
@@ -54,8 +68,9 @@ public class WebhookConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Webhook delivery failed for message {MessageId}.", messageId);
-                _channel.BasicNack(eventArgs.DeliveryTag, multiple: false, requeue: true);
+                _logger.LogError(ex, "Webhook delivery failed after retries for message {MessageId}. Routing to DLQ.", messageId);
+                // Nack with requeue: false forwards message to dead letter exchange
+                _channel.BasicNack(eventArgs.DeliveryTag, multiple: false, requeue: false);
             }
         };
 
@@ -102,6 +117,9 @@ public class WebhookConsumer : BackgroundService
         var retryPolicy = CreateRetryPolicy();
         var httpClient = _httpClientFactory.CreateClient();
 
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var signature = HmacSignatureService.ComputeHmac($"{timestamp}.{body}", merchant.Secret);
+
         var response = await retryPolicy.ExecuteAsync(
             async ct =>
             {
@@ -110,6 +128,8 @@ public class WebhookConsumer : BackgroundService
                     Content = new StringContent(body, Encoding.UTF8, "application/json")
                 };
                 request.Headers.Add("X-Event-Type", eventType);
+                request.Headers.Add("X-Timestamp", timestamp);
+                request.Headers.Add("X-Signature", signature);
                 return await httpClient.SendAsync(request, ct);
             },
             cancellationToken);
@@ -134,7 +154,7 @@ public class WebhookConsumer : BackgroundService
                     TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
                 onRetry: (outcome, delay, retryCount, context) =>
                 {
-                    // Retry logging can be added here if an ILogger is available.
+                    // Retry logging hook
                 });
     }
 

@@ -251,6 +251,10 @@ public static class PaymentEndpoints
                 ? Results.Ok(ApiResponse.Ok("Thanh toán thành công", response))
                 : Results.Ok(ApiResponse.Ok("Thanh toán thất bại", response));
         }
+        catch (FluentValidation.ValidationException ex)
+        {
+            return Results.BadRequest(ApiResponse.Fail(string.Join("; ", ex.Errors.Select(e => e.ErrorMessage))));
+        }
         catch (InvalidOperationException ex)
         {
             return Results.Conflict(ApiResponse.Fail(ex.Message));
@@ -289,6 +293,10 @@ public static class PaymentEndpoints
                 ? Results.Ok(ApiResponse.Ok("Hoàn tiền thành công", response))
                 : Results.Ok(ApiResponse.Ok("Hoàn tiền thất bại", response));
         }
+        catch (FluentValidation.ValidationException ex)
+        {
+            return Results.BadRequest(ApiResponse.Fail(string.Join("; ", ex.Errors.Select(e => e.ErrorMessage))));
+        }
         catch (InvalidOperationException ex)
         {
             return Results.Conflict(ApiResponse.Fail(ex.Message));
@@ -304,6 +312,10 @@ public static class PaymentEndpoints
             var command = new CreateSettlementCommand(request);
             var response = await mediator.Send(command);
             return Results.Ok(ApiResponse.Ok("Quyết toán thành công", response));
+        }
+        catch (FluentValidation.ValidationException ex)
+        {
+            return Results.BadRequest(ApiResponse.Fail(string.Join("; ", ex.Errors.Select(e => e.ErrorMessage))));
         }
         catch (InvalidOperationException ex)
         {

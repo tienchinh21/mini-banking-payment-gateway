@@ -15,8 +15,30 @@ public class AuthSecurityTests
 
         Assert.NotNull(hash);
         Assert.NotEmpty(hash);
+        Assert.Contains(".", hash); // Salted PBKDF2 format
         Assert.True(PasswordHasher.Verify(password, hash));
         Assert.False(PasswordHasher.Verify("WrongPassword", hash));
+    }
+
+    [Fact]
+    public void PasswordHasher_ShouldGenerateDifferentSaltForSamePassword()
+    {
+        var password = "Admin@123";
+        var hash1 = PasswordHasher.Hash(password);
+        var hash2 = PasswordHasher.Hash(password);
+
+        Assert.NotEqual(hash1, hash2); // Salt ensures distinct hashes
+        Assert.True(PasswordHasher.Verify(password, hash1));
+        Assert.True(PasswordHasher.Verify(password, hash2));
+    }
+
+    [Fact]
+    public void PasswordHasher_ShouldVerifyLegacySha256Hash()
+    {
+        // SHA-256("Admin@123") in hex lowercase
+        var legacySha256Hash = "e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7";
+        Assert.True(PasswordHasher.Verify("Admin@123", legacySha256Hash));
+        Assert.False(PasswordHasher.Verify("WrongPassword", legacySha256Hash));
     }
 
     [Fact]

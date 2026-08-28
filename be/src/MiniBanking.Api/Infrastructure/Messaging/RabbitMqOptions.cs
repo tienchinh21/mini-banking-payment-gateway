@@ -9,4 +9,7 @@ public class RabbitMqOptions
     public string ExchangeName { get; set; } = "minibanking.events";
     public string QueueName { get; set; } = "minibanking.webhooks";
     public string RoutingKey { get; set; } = "payment.events";
+    public string DeadLetterExchangeName { get; set; } = "minibanking.events.dlx";
+    public string DeadLetterQueueName { get; set; } = "webhooks.dlq";
+    public string DeadLetterRoutingKey { get; set; } = "webhooks.dlq";
 }

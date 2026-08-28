@@ -15,7 +15,7 @@ using MiniBanking.Modules.Ledger.Domain;
 using MiniBanking.Modules.Merchants.Domain;
 using MiniBanking.Modules.Payments.Application.CreatePayment;
 using MiniBanking.Modules.Payments.Application.CreateRefund;
-using MiniBanking.Modules.Payments.Application;
+using MiniBanking.Modules.Payments.Application.CreateSettlement;
 using MiniBanking.Modules.Payments.Domain;
 using MiniBanking.SharedKernel;
 

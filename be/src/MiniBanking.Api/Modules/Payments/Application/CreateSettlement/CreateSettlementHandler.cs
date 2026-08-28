@@ -3,41 +3,17 @@ using Microsoft.EntityFrameworkCore;
 using MiniBanking.Infrastructure.Persistence;
 using MiniBanking.Modules.Payments.Domain;
 using MiniBanking.SharedKernel;
-using MiniBanking.SharedKernel.Behaviors;
 using MiniBanking.SharedKernel.Contracts;
 using System.Text.Json;
 
-namespace MiniBanking.Modules.Payments.Application;
+namespace MiniBanking.Modules.Payments.Application.CreateSettlement;
 
-public sealed record CreateSettlementRequest(
-    string MerchantId,
-    string BatchReference);
-
-public sealed record CreateSettlementResponse(
-    Guid SettlementId,
-    string BatchReference,
-    string MerchantId,
-    string Status,
-    long Amount,
-    string Currency,
-    int PaymentCount);
-
-public sealed class CreateSettlementCommand : IRequest<CreateSettlementResponse>, ITransactionalRequest
-{
-    public CreateSettlementRequest Request { get; }
-
-    public CreateSettlementCommand(CreateSettlementRequest request)
-    {
-        Request = request;
-    }
-}
-
-public sealed class CreateSettlementCommandHandler : IRequestHandler<CreateSettlementCommand, CreateSettlementResponse>
+public sealed class CreateSettlementHandler : IRequestHandler<CreateSettlementCommand, CreateSettlementResponse>
 {
     private readonly MiniBankingDbContext _dbContext;
     private readonly ILedgerPostingService _ledgerPostingService;
 
-    public CreateSettlementCommandHandler(
+    public CreateSettlementHandler(
         MiniBankingDbContext dbContext,
         ILedgerPostingService ledgerPostingService)
     {

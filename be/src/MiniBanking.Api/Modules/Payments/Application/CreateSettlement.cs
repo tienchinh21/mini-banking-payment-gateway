@@ -1,9 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using MiniBanking.Infrastructure.Persistence;
-using MiniBanking.Modules.Ledger.Domain;
 using MiniBanking.Modules.Payments.Domain;
 using MiniBanking.SharedKernel;
+using MiniBanking.SharedKernel.Behaviors;
+using MiniBanking.SharedKernel.Contracts;
 using System.Text.Json;
 
 namespace MiniBanking.Modules.Payments.Application;
@@ -21,7 +22,7 @@ public sealed record CreateSettlementResponse(
     string Currency,
     int PaymentCount);
 
-public sealed class CreateSettlementCommand : IRequest<CreateSettlementResponse>
+public sealed class CreateSettlementCommand : IRequest<CreateSettlementResponse>, ITransactionalRequest
 {
     public CreateSettlementRequest Request { get; }
 
@@ -34,109 +35,92 @@ public sealed class CreateSettlementCommand : IRequest<CreateSettlementResponse>
 public sealed class CreateSettlementCommandHandler : IRequestHandler<CreateSettlementCommand, CreateSettlementResponse>
 {
     private readonly MiniBankingDbContext _dbContext;
+    private readonly ILedgerPostingService _ledgerPostingService;
 
-    public CreateSettlementCommandHandler(MiniBankingDbContext dbContext)
+    public CreateSettlementCommandHandler(
+        MiniBankingDbContext dbContext,
+        ILedgerPostingService ledgerPostingService)
     {
         _dbContext = dbContext;
+        _ledgerPostingService = ledgerPostingService;
     }
 
     public async Task<CreateSettlementResponse> Handle(CreateSettlementCommand command, CancellationToken cancellationToken)
     {
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var merchant = await _dbContext.Merchants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(m => m.MerchantId == command.Request.MerchantId, cancellationToken);
 
-        try
-        {
-            var merchant = await _dbContext.Merchants
-                .AsNoTracking()
-                .FirstOrDefaultAsync(m => m.MerchantId == command.Request.MerchantId, cancellationToken);
+        if (merchant is null)
+            throw new InvalidOperationException("Merchant not found.");
 
-            if (merchant is null)
-                throw new InvalidOperationException("Merchant not found.");
+        var existing = await _dbContext.Settlements
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                s => s.MerchantId == command.Request.MerchantId &&
+                     s.BatchReference == command.Request.BatchReference,
+                cancellationToken);
 
-            var existing = await _dbContext.Settlements
-                .AsNoTracking()
-                .FirstOrDefaultAsync(
-                    s => s.MerchantId == command.Request.MerchantId &&
-                         s.BatchReference == command.Request.BatchReference,
-                    cancellationToken);
+        if (existing is not null)
+            throw new InvalidOperationException("Settlement batch already processed.");
 
-            if (existing is not null)
-                throw new InvalidOperationException("Settlement batch already processed.");
+        var paymentsTotal = await _dbContext.Payments
+            .AsNoTracking()
+            .Where(p => p.MerchantId == command.Request.MerchantId && p.Status == PaymentStatus.Succeeded)
+            .SumAsync(p => p.Amount, cancellationToken);
 
-            var paymentsTotal = await _dbContext.Payments
-                .AsNoTracking()
-                .Where(p => p.MerchantId == command.Request.MerchantId && p.Status == PaymentStatus.Succeeded)
-                .SumAsync(p => p.Amount, cancellationToken);
+        var refundsTotal = await _dbContext.Refunds
+            .AsNoTracking()
+            .Where(r => r.MerchantId == command.Request.MerchantId && r.Status == RefundStatus.Succeeded)
+            .SumAsync(r => r.Amount, cancellationToken);
 
-            var refundsTotal = await _dbContext.Refunds
-                .AsNoTracking()
-                .Where(r => r.MerchantId == command.Request.MerchantId && r.Status == RefundStatus.Succeeded)
-                .SumAsync(r => r.Amount, cancellationToken);
+        var paymentCount = await _dbContext.Payments
+            .AsNoTracking()
+            .CountAsync(
+                p => p.MerchantId == command.Request.MerchantId && p.Status == PaymentStatus.Succeeded,
+                cancellationToken);
 
-            var paymentCount = await _dbContext.Payments
-                .AsNoTracking()
-                .CountAsync(
-                    p => p.MerchantId == command.Request.MerchantId && p.Status == PaymentStatus.Succeeded,
-                    cancellationToken);
+        var netAmount = paymentsTotal - refundsTotal;
+        if (netAmount <= 0)
+            throw new InvalidOperationException("Net settlement amount must be positive.");
 
-            var netAmount = paymentsTotal - refundsTotal;
+        var amount = new Money(netAmount, "VND");
+        var settlement = new Settlement(
+            command.Request.MerchantId,
+            command.Request.BatchReference,
+            amount,
+            paymentCount);
 
-            if (netAmount <= 0)
-                throw new InvalidOperationException("Net settlement amount must be positive.");
+        _dbContext.Settlements.Add(settlement);
 
-            var amount = new Money(netAmount, "VND");
-            var settlement = new Settlement(
-                command.Request.MerchantId,
-                command.Request.BatchReference,
-                amount,
-                paymentCount);
+        // Post Settlement via Ledger Domain Service
+        var ledgerTx = await _ledgerPostingService.PostSettlementAsync(
+            command.Request.MerchantId, amount, new Money(0, "VND"), $"Settlement batch {command.Request.BatchReference}", cancellationToken);
 
-            _dbContext.Settlements.Add(settlement);
+        settlement.MarkCompleted(ledgerTx.Id);
 
-            var ledgerTransaction = new LedgerTransaction(
-                $"SETTLEMENT-{settlement.Id}",
-                LedgerTransactionType.Settlement,
-                $"Settlement batch {command.Request.BatchReference}");
+        var outboxMessage = new OutboxMessage(
+            "SettlementCompleted",
+            JsonSerializer.Serialize(new
+            {
+                SettlementId = settlement.Id,
+                MerchantId = settlement.MerchantId,
+                BatchReference = settlement.BatchReference,
+                Amount = settlement.Amount,
+                Currency = settlement.Currency,
+                PaymentCount = settlement.PaymentCount,
+                Timestamp = DateTime.UtcNow
+            }));
 
-            ledgerTransaction.AddEntry(SystemAccountIds.PlatformClearing, "PlatformClearing", amount, isDebit: true);
-            ledgerTransaction.AddEntry(SystemAccountIds.MerchantSettlement, "MerchantSettlement", amount, isDebit: false);
-            ledgerTransaction.ValidateInvariant();
+        _dbContext.OutboxMessages.Add(outboxMessage);
 
-            _dbContext.LedgerTransactions.Add(ledgerTransaction);
-
-            settlement.MarkCompleted(ledgerTransaction.Id);
-
-            var outboxMessage = new OutboxMessage(
-                "SettlementCompleted",
-                JsonSerializer.Serialize(new
-                {
-                    SettlementId = settlement.Id,
-                    MerchantId = settlement.MerchantId,
-                    BatchReference = settlement.BatchReference,
-                    Amount = settlement.Amount,
-                    Currency = settlement.Currency,
-                    PaymentCount = settlement.PaymentCount,
-                    Timestamp = DateTime.UtcNow
-                }));
-
-            _dbContext.OutboxMessages.Add(outboxMessage);
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            return new CreateSettlementResponse(
-                settlement.Id,
-                settlement.BatchReference,
-                settlement.MerchantId,
-                "Completed",
-                settlement.Amount,
-                settlement.Currency,
-                settlement.PaymentCount);
-        }
-        catch (Exception)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+        return new CreateSettlementResponse(
+            settlement.Id,
+            settlement.BatchReference,
+            settlement.MerchantId,
+            "Completed",
+            settlement.Amount,
+            settlement.Currency,
+            settlement.PaymentCount);
     }
 }

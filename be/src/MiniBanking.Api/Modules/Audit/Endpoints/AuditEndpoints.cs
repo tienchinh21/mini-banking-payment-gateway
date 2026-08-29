@@ -1,8 +1,8 @@
+using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.EntityFrameworkCore;
-using MiniBanking.Infrastructure.Persistence;
+using MiniBanking.Modules.Audit.Application.Queries.GetAuditLogs;
 using MiniBanking.SharedKernel;
 
 namespace MiniBanking.Modules.Audit.Endpoints;
@@ -20,53 +20,12 @@ public static class AuditEndpoints
             string? actor,
             DateTime? fromDate,
             DateTime? toDate,
-            MiniBankingDbContext db) =>
+            IMediator mediator) =>
         {
-            var p = Math.Max(1, page ?? 1);
-            var ps = Math.Clamp(pageSize ?? 20, 1, 100);
+            var query = new GetAuditLogsQuery(page, pageSize, action, actor, fromDate, toDate);
+            var result = await mediator.Send(query);
 
-            var query = db.AuditLogs.AsNoTracking().AsQueryable();
-
-            if (!string.IsNullOrWhiteSpace(action))
-                query = query.Where(a => a.Action.Contains(action));
-
-            if (!string.IsNullOrWhiteSpace(actor))
-                query = query.Where(a => a.ActorEmail.Contains(actor) || a.ActorId.Contains(actor));
-
-            if (fromDate.HasValue)
-                query = query.Where(a => a.CreatedAt >= fromDate.Value.ToUniversalTime());
-
-            if (toDate.HasValue)
-                query = query.Where(a => a.CreatedAt <= toDate.Value.ToUniversalTime());
-
-            var total = await query.CountAsync();
-            var logs = await query
-                .OrderByDescending(a => a.CreatedAt)
-                .Skip((p - 1) * ps)
-                .Take(ps)
-                .ToListAsync();
-
-            return Results.Ok(ApiResponse.Ok("Danh sách nhật ký hệ thống", new
-            {
-                Items = logs.Select(l => new
-                {
-                    l.Id,
-                    l.Action,
-                    ActorId = l.ActorId,
-                    ActorEmail = l.ActorEmail,
-                    l.Resource,
-                    l.Method,
-                    l.Path,
-                    l.IpAddress,
-                    l.CorrelationId,
-                    StatusCode = l.ResponseStatusCode,
-                    l.CreatedAt
-                }),
-                TotalCount = total,
-                Page = p,
-                PageSize = ps,
-                TotalPages = (int)Math.Ceiling(total / (double)ps)
-            }));
+            return Results.Ok(ApiResponse.Ok("Danh sách nhật ký hệ thống", result));
         };
 
         group.MapGet("/audit-logs", handler);

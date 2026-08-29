@@ -28,4 +28,16 @@ public class AdminUser : Entity
         PasswordHash = passwordHash;
         Role = role;
     }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+        MarkUpdated();
+    }
+
+    public void Activate()
+    {
+        IsActive = true;
+        MarkUpdated();
+    }
 }

@@ -1,12 +1,13 @@
 using System.Security.Claims;
+using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.EntityFrameworkCore;
-using MiniBanking.Infrastructure.Persistence;
-using MiniBanking.Infrastructure.Security;
 using MiniBanking.Modules.Admin.Application;
-using MiniBanking.Modules.Payments.Domain;
+using MiniBanking.Modules.Admin.Application.Commands.AdminLogin;
+using MiniBanking.Modules.Admin.Application.Queries.GetAdminProfile;
+using MiniBanking.Modules.Admin.Application.Queries.GetDashboardStats;
+using MiniBanking.Modules.Admin.Application.Queries.GetMerchantSettlementSummary;
 using MiniBanking.SharedKernel;
 
 namespace MiniBanking.Modules.Admin.Endpoints;
@@ -18,31 +19,15 @@ public static class AdminEndpoints
         var group = routes.MapGroup("/api/v1/admin");
 
         // 1. Admin Authentication Endpoints
-        group.MapPost("/auth/login", async (LoginRequest request, IJwtTokenService tokenService, MiniBankingDbContext db) =>
+        group.MapPost("/auth/login", async (LoginRequest request, IMediator mediator) =>
         {
-            var admin = await db.AdminUsers
-                .FirstOrDefaultAsync(a => a.Email == request.Email && a.IsActive);
+            var command = new AdminLoginCommand(request.Email, request.Password);
+            var result = await mediator.Send(command);
 
-            if (admin is null || !PasswordHasher.Verify(request.Password, admin.PasswordHash))
+            if (result is null)
                 return Results.Unauthorized();
 
-            var token = tokenService.GenerateToken(
-                admin.Id.ToString(),
-                admin.Email,
-                admin.FullName,
-                new[] { admin.Role });
-
-            return Results.Ok(ApiResponse.Ok("Đăng nhập thành công", new
-            {
-                Token = token,
-                User = new
-                {
-                    admin.Id,
-                    admin.Email,
-                    admin.FullName,
-                    admin.Role
-                }
-            }));
+            return Results.Ok(ApiResponse.Ok("Đăng nhập thành công", result));
         });
 
         group.MapPost("/auth/logout", () =>
@@ -50,77 +35,24 @@ public static class AdminEndpoints
             return Results.Ok(ApiResponse.Ok("Đăng xuất thành công"));
         }).RequireAuthorization("Admin");
 
-        group.MapGet("/auth/profile", (HttpContext context) =>
+        group.MapGet("/auth/profile", async (ClaimsPrincipal user, IMediator mediator) =>
         {
-            var user = context.User;
-            return Results.Ok(ApiResponse.Ok("Thông tin tài khoản", new
-            {
-                Id = user.FindFirstValue(ClaimTypes.NameIdentifier),
-                Email = user.FindFirstValue(ClaimTypes.Email),
-                FullName = user.FindFirstValue(ClaimTypes.Name),
-                Role = user.FindFirstValue(ClaimTypes.Role)
-            }));
+            var profile = await mediator.Send(new GetAdminProfileQuery(user));
+            return Results.Ok(ApiResponse.Ok("Thông tin tài khoản", profile));
         }).RequireAuthorization("Admin");
 
         // 2. Admin Dashboard Statistics
-        group.MapGet("/dashboard/stats", async (MiniBankingDbContext db) =>
+        group.MapGet("/dashboard/stats", async (IMediator mediator) =>
         {
-            var totalWallets = await db.WalletAccounts.CountAsync();
-            var totalCustomers = await db.BankingCustomers.CountAsync();
-            var totalMerchants = await db.Merchants.CountAsync(m => m.IsActive);
+            var stats = await mediator.Send(new GetDashboardStatsQuery());
+            return Results.Ok(ApiResponse.Ok("Thống kê tổng quan", stats));
+        }).RequireAuthorization("Admin");
 
-            var totalPayments = await db.Payments.CountAsync();
-            var successfulPayments = await db.Payments.CountAsync(p => p.Status == PaymentStatus.Succeeded);
-            var failedPayments = await db.Payments.CountAsync(p => p.Status == PaymentStatus.Failed);
-
-            var totalVolume = await db.Payments
-                .Where(p => p.Status == PaymentStatus.Succeeded)
-                .SumAsync(p => p.Amount);
-
-            var totalRefunds = await db.Refunds.CountAsync(r => r.Status == RefundStatus.Succeeded);
-            var totalRefundAmount = await db.Refunds
-                .Where(r => r.Status == RefundStatus.Succeeded)
-                .SumAsync(r => r.Amount);
-
-            var today = DateTime.UtcNow.Date;
-            var todayPayments = await db.Payments
-                .Where(p => p.CreatedAt >= today && p.Status == PaymentStatus.Succeeded)
-                .SumAsync(p => p.Amount);
-            var todayTxCount = await db.Payments
-                .CountAsync(p => p.CreatedAt >= today);
-
-            var recentPayments = await db.Payments
-                .AsNoTracking()
-                .OrderByDescending(p => p.CreatedAt)
-                .Take(5)
-                .Select(p => new
-                {
-                    p.Id,
-                    p.MerchantId,
-                    p.MerchantOrderId,
-                    p.Amount,
-                    p.Currency,
-                    Status = p.Status.ToString(),
-                    p.CreatedAt
-                })
-                .ToListAsync();
-
-            return Results.Ok(ApiResponse.Ok("Thống kê tổng quan", new
-            {
-                Wallets = new { Total = totalWallets, Customers = totalCustomers },
-                Merchants = new { Total = totalMerchants },
-                Payments = new
-                {
-                    Total = totalPayments,
-                    Successful = successfulPayments,
-                    Failed = failedPayments,
-                    TotalVolume = totalVolume,
-                    TodayVolume = todayPayments,
-                    TodayCount = todayTxCount
-                },
-                Refunds = new { TotalCount = totalRefunds, TotalAmount = totalRefundAmount },
-                RecentPayments = recentPayments
-            }));
+        // 3. Admin Merchant Settlement Summary
+        group.MapGet("/merchants/settlement-summary", async (string? merchantId, IMediator mediator) =>
+        {
+            var summary = await mediator.Send(new GetMerchantSettlementSummaryQuery(merchantId));
+            return Results.Ok(ApiResponse.Ok("Tổng hợp quyết toán đối tác", summary));
         }).RequireAuthorization("Admin");
 
         return routes;

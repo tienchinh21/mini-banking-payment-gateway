@@ -51,6 +51,18 @@ public class Merchant : Entity
         MarkUpdated();
     }
 
+    public void Deactivate()
+    {
+        IsActive = false;
+        MarkUpdated();
+    }
+
+    public void Activate()
+    {
+        IsActive = true;
+        MarkUpdated();
+    }
+
     public void RegenerateCredentials(string apiKey, string secret)
     {
         if (string.IsNullOrWhiteSpace(apiKey))
